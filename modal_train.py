@@ -31,7 +31,7 @@ image = (
     .uv_pip_install("torch==2.9.1", "transformers>=4.57", "peft>=0.17", "accelerate", "huggingface_hub[hf_transfer]")
     # Fast kernels for Qwen3.5's gated-delta-net layers; without them transformers falls
     # back to reference PyTorch code and a training step takes an hour.
-    .uv_pip_install("flash-linear-attention")
+    .uv_pip_install("flash-linear-attention", "tilelang")
     .run_commands("uv pip install --system --no-build-isolation causal-conv1d || echo 'causal-conv1d build failed; using the slow fallback'")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_HOME": "/cache/hf"})
 )
