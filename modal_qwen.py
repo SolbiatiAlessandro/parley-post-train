@@ -15,7 +15,7 @@ import modal
 MODEL = "Qwen/Qwen3.5-4B"
 SERVED_NAME = "qwen3.5-4b"
 VLLM_VERSION = "0.31.0"
-GPU = "L40S"
+GPU = "H100"
 
 image = (
     modal.Image.from_registry("nvidia/cuda:12.8.1-devel-ubuntu22.04", add_python="3.12")

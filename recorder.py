@@ -25,8 +25,8 @@ from dotenv import dotenv_values
 HERE = Path(__file__).parent
 SERVED_NAME = "qwen3.5-4b"
 HF_ID = "Qwen/Qwen3.5-4B"
-GPU = "L40S"
-GPU_DOLLARS_PER_HOUR = 0.000542 * 3600  # modal.com/pricing, 2026-10-14
+# modal.com/pricing, 2026-10-14, per hour
+GPU_DOLLARS_PER_HOUR = {"L40S": 0.000542 * 3600, "H100": 0.001097 * 3600}
 # Qwen's recommended settings from the model card, per mode. The game sets
 # the temperature (COWORLD_LLM_TEMPERATURE) and the answer's token cap.
 SAMPLING = {
@@ -65,8 +65,9 @@ def describe(system, user):
 
 
 class Recorder:
-    def __init__(self, modal_url, key, run_dir, parley_port, thinking, thinking_budget):
+    def __init__(self, modal_url, key, run_dir, parley_port, thinking, thinking_budget, gpu):
         self.base = modal_url.rstrip("/")
+        self.gpu = gpu
         self.auth = {"Authorization": f"Bearer {key}"}
         self.run_dir = Path(run_dir)
         self.thinking = thinking
@@ -79,8 +80,8 @@ class Recorder:
         self.session = None
         self.meta = {
             "model": HF_ID,
-            "gpu": GPU,
-            "gpu_dollars_per_hour": GPU_DOLLARS_PER_HOUR,
+            "gpu": gpu,
+            "gpu_dollars_per_hour": GPU_DOLLARS_PER_HOUR[gpu],
             "thinking": thinking,
             "thinking_budget": self.thinking_budget,
             "sampling": SAMPLING[thinking],
@@ -120,6 +121,52 @@ class Recorder:
     async def stop(self, _app):
         await self.session.close()
 
+    async def complete(self, request, call):
+        """One streamed chat completion. Publishes the thinking as it arrives.
+
+        Returns a dict shaped like a non-streamed reply: choices[0].message
+        (content, reasoning), finish_reason, usage."""
+        streamed = {**request, "stream": True, "stream_options": {"include_usage": True}}
+        reasoning, content, finish, usage = [], [], None, None
+        last_publish = 0.0
+        async with self.session.post(self.base + "/v1/chat/completions",
+                                     json=streamed, headers=self.auth) as response:
+            if response.status != 200:
+                text = await response.text()
+                raise RuntimeError(f"GPU server returned {response.status}: {text[:400]}")
+            async for raw in response.content:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                chunk = json.loads(data)
+                if chunk.get("usage"):
+                    usage = chunk["usage"]
+                for choice in chunk.get("choices", []):
+                    delta = choice.get("delta") or {}
+                    piece = delta.get("reasoning_content") or delta.get("reasoning")
+                    if piece:
+                        reasoning.append(piece)
+                    if delta.get("content"):
+                        content.append(delta["content"])
+                    if choice.get("finish_reason"):
+                        finish = choice["finish_reason"]
+                now = time.monotonic()
+                if now - last_publish > 0.5:
+                    last_publish = now
+                    call["reasoning_partial"] = "".join(reasoning)
+                    call["output_partial"] = "".join(content)
+                    self.publish("call", call)
+        return {
+            "choices": [{"message": {"content": "".join(content) or None,
+                                     "reasoning": "".join(reasoning) or None},
+                         "finish_reason": finish}],
+            "usage": usage or {"prompt_tokens": 0, "completion_tokens": 0},
+            "streamed": True,
+        }
+
     async def messages(self, request):
         if not trusted(request):
             return web.json_response({"error": "forbidden"}, status=403)
@@ -149,12 +196,7 @@ class Recorder:
         self.publish("call", call)
         began = time.monotonic()
         try:
-            async with self.session.post(self.base + "/v1/chat/completions",
-                                         json=gpu_request, headers=self.auth) as response:
-                text = await response.text()
-                if response.status != 200:
-                    raise RuntimeError(f"GPU server returned {response.status}: {text[:400]}")
-                gpu_response = json.loads(text)
+            gpu_response = await self.complete(gpu_request, call)
         except Exception as error:  # the game sees the failure; no retry, no substitute
             call.update(status="error", error=str(error),
                         latency_ms=round((time.monotonic() - began) * 1000))
@@ -184,12 +226,7 @@ class Recorder:
             }
             call["continuation_request"] = continuation
             try:
-                async with self.session.post(self.base + "/v1/chat/completions",
-                                             json=continuation, headers=self.auth) as response:
-                    text = await response.text()
-                    if response.status != 200:
-                        raise RuntimeError(f"GPU server returned {response.status}: {text[:400]}")
-                    second = json.loads(text)
+                second = await self.complete(continuation, call)
             except Exception as error:
                 call.update(status="error", error=str(error),
                             latency_ms=round((time.monotonic() - began) * 1000))
@@ -220,6 +257,8 @@ class Recorder:
             parsed = json.loads(output)
         except ValueError:
             parsed = None
+        call.pop("reasoning_partial", None)
+        call.pop("output_partial", None)
         call.update(
             status="done",
             latency_ms=round((time.monotonic() - began) * 1000),
@@ -340,11 +379,12 @@ def main():
     parser.add_argument("--parley-port", type=int, default=8890)
     parser.add_argument("--thinking", action="store_true", help="let the model think before the JSON")
     parser.add_argument("--thinking-budget", type=int, default=3000)
+    parser.add_argument("--gpu", choices=sorted(GPU_DOLLARS_PER_HOUR), default="H100")
     args = parser.parse_args()
     key = dotenv_values(HERE / ".env")["VLLM_API_KEY"]
     Path(args.run_dir).mkdir(mode=0o700, parents=True, exist_ok=True)
     recorder = Recorder(args.modal_url, key, args.run_dir, args.parley_port,
-                        args.thinking, args.thinking_budget)
+                        args.thinking, args.thinking_budget, args.gpu)
     app = web.Application(client_max_size=16 * 1024 * 1024)
     app.on_startup.append(recorder.start)
     app.on_cleanup.append(recorder.stop)

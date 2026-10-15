@@ -141,7 +141,7 @@ function highlightTemplate(text, call) {
 
 function section(id, call, title, inner) {
   const key = `${call.n}:${id}`;
-  const open = openState.has(key) ? openState.get(key) : (id === "user" && call.n === autoOpenN);
+  const open = openState.has(key) ? openState.get(key) : ((id === "user" || id === "reasoning") && call.n === autoOpenN);
   return `<details class="sec" data-key="${key}" ${open ? "open" : ""}><summary>${title}</summary>${inner}</details>`;
 }
 const openState = new Map();  // only sections the viewer clicked
@@ -170,11 +170,13 @@ function renderCard(call) {
       <div class="output">${prettyOutput(call)}</div>`;
     if (call.parsed === null) body += `<div class="err">Not valid JSON: the game will reject this reply.</div>`;
     if (call.thinking_cut) body += `<div class="hint" style="color:var(--warn)">Thinking ran past its ${fmt(meta.thinking_budget)}-token budget. The recorder closed the thinking with Qwen's standard "limited time" sentence and the model wrote the answer from there.</div>`;
-    if (call.reasoning) body += section("reasoning", call, "<b>Thinking</b> (hidden from the game)", `<pre class="txt">${esc(call.reasoning)}</pre>`);
+    if (call.reasoning) body += section("reasoning", call, `<b>Thinking</b> — ${fmt(call.reasoning.length)} characters the game never sees${call.thinking_cut ? ", cut off at the budget" : ""}`, `<pre class="txt">${esc(call.reasoning)}</pre>`);
   } else if (call.status === "error") {
     body += `<div class="err">${esc(call.error)}</div>`;
   } else {
-    body += `<div class="hint">Qwen is writing…</div>`;
+    const partial = call.reasoning_partial || "";
+    body += `<div class="label">Thinking, live — ${fmt(partial.length)} characters so far (the game never sees this)</div>
+      <pre class="txt live" id="live-${call.n}">${esc(partial)}${call.output_partial ? `\n\n<span class="gen">${esc(call.output_partial)}</span>` : ""}</pre>`;
   }
   if (call.friend) body += `<div class="cards">Secret cards in this prompt: FRIEND <b>${esc(call.friend)}</b> · ENEMY <b>${esc(call.enemy)}</b></div>`;
   body += section("user", call, `<b>Input: user message</b> (${fmt(user.length)} characters; changes every call)`, `<pre class="txt">${highlightUser(user)}</pre>`);
@@ -191,6 +193,8 @@ function renderCard(call) {
     <span class="seat" style="color:${seatColor(call.seat)}">${esc(call.seat)}</span>
     <span class="kind">${esc(call.kind)}</span><span class="meta">${timing}</span></div>
     <div class="body">${body}</div>`;
+  const live = el.querySelector("pre.live");
+  if (live) live.scrollTop = live.scrollHeight;
   el.querySelectorAll("details.sec > summary").forEach(sm => sm.addEventListener("click", () => {
     const d = sm.parentElement; openState.set(d.dataset.key, !d.open);
   }));
