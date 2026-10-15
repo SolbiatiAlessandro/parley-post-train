@@ -47,6 +47,40 @@ def trusted(request):
     return any(address in net for net in TRUSTED)
 
 
+def action_schema(system, user):
+    """JSON schema for this call, built from the game's own instruction lines,
+    so the decoder can only name cogs the prompt offers. The model still picks
+    the move; this only rules out typos and names that are not at the table."""
+    me = re.match(r"You are (.+?), a cog", system)
+    me = me.group(1) if me else None
+    seats = re.findall(r"^- (\S+): ", user, flags=re.M)
+    others = [n for n in seats if n != me] or seats
+    props = {"say": {"type": "string"}}
+    required = ["say"]
+    shoot = re.search(r'"shoot": <one of (.+?)>', user)
+    if shoot:
+        options = re.findall(r'"([^"]+)"', shoot.group(1))
+        props["shoot"] = {"type": "string", "enum": options}
+        props["aim"] = {"type": "string", "enum": ["head", "hip"]}
+        required.append("shoot")
+    extras = re.search(r"Optional extra fields, at most one of each: (.+)", user)
+    if extras:
+        line = extras.group(1)
+        if '"whisper"' in line:
+            props["whisper"] = {"type": "object", "properties": {"to": {"type": "string", "enum": others},
+                                "text": {"type": "string"}}, "required": ["to", "text"], "additionalProperties": False}
+        if '"reveal"' in line:
+            props["reveal"] = {"type": "object", "properties": {"to": {"type": "string", "enum": others},
+                               "card": {"type": "string", "enum": ["friend", "enemy"]}}, "required": ["to", "card"],
+                               "additionalProperties": False}
+        if '"give"' in line:
+            props["give"] = {"type": "string", "enum": others}
+        pledge = re.search(r'"pledge": <[^>]*any of ([^>]+)>', line)
+        if pledge:
+            props["pledge"] = {"type": "string", "enum": [n.strip() for n in pledge.group(1).split(",") if n.strip()]}
+    return {"type": "object", "properties": props, "required": required, "additionalProperties": False}
+
+
 def describe(system, user):
     seat = re.match(r"You are (.+?), a cog", system)
     if "You are IT." in user:
@@ -71,6 +105,7 @@ class Recorder:
         self.auth = {"Authorization": f"Bearer {key}"}
         self.run_dir = Path(run_dir)
         self.thinking = thinking
+        self.routes = {}  # seat slot -> served model name (for mixed tables)
         # Extra output tokens for the thinking text, on top of the game's cap
         # for the JSON answer. If the thinking runs past it, the answer is
         # empty and the game rejects the reply.
@@ -85,7 +120,7 @@ class Recorder:
             "thinking": thinking,
             "thinking_budget": self.thinking_budget,
             "sampling": SAMPLING[thinking],
-            "decoding": "JSON-only (vLLM response_format json_object)",
+            "decoding": "JSON schema per call (legal names only; vLLM response_format json_schema)",
             "parley_port": parley_port,
             "status": "recorder started",
             "gpu_started": None,
@@ -181,11 +216,15 @@ class Recorder:
             "temperature": body["temperature"],
             **SAMPLING[self.thinking],
             "chat_template_kwargs": {"enable_thinking": self.thinking},
-            "response_format": {"type": "json_object"},
+            "response_format": {"type": "json_schema",
+                                "json_schema": {"name": "parley_action", "schema": action_schema(system, user)}},
         }
+        slot = int(request.headers.get("x-coworld-player-slot", "-1"))
+        gpu_request["model"] = self.routes.get(slot, SERVED_NAME)
         call = {
             "n": len(self.calls) + 1,
-            "slot": int(request.headers.get("x-coworld-player-slot", "-1")),
+            "slot": slot,
+            "served_model": gpu_request["model"],
             **describe(system, user),
             "status": "waiting for Qwen",
             "started": time.time(),
@@ -280,12 +319,12 @@ class Recorder:
         request = call["gpu_request"]
         try:
             async with self.session.post(self.base + "/tokenize", headers=self.auth, json={
-                    "model": SERVED_NAME, "messages": request["messages"],
+                    "model": request["model"], "messages": request["messages"],
                     "add_generation_prompt": True,
                     "chat_template_kwargs": request["chat_template_kwargs"]}) as response:
                 tokens = (await response.json())["tokens"]
             async with self.session.post(self.base + "/detokenize", headers=self.auth, json={
-                    "model": SERVED_NAME, "tokens": tokens}) as response:
+                    "model": request["model"], "tokens": tokens}) as response:
                 call["template_text"] = (await response.json())["prompt"]
             call["template_tokens"] = len(tokens)
         except Exception as error:
@@ -380,11 +419,17 @@ def main():
     parser.add_argument("--thinking", action="store_true", help="let the model think before the JSON")
     parser.add_argument("--thinking-budget", type=int, default=3000)
     parser.add_argument("--gpu", choices=sorted(GPU_DOLLARS_PER_HOUR), default="H100")
+    parser.add_argument("--route", action="append", default=[],
+                        help="slot=model: serve this seat from another model name (repeatable)")
     args = parser.parse_args()
     key = dotenv_values(HERE / ".env")["VLLM_API_KEY"]
     Path(args.run_dir).mkdir(mode=0o700, parents=True, exist_ok=True)
     recorder = Recorder(args.modal_url, key, args.run_dir, args.parley_port,
                         args.thinking, args.thinking_budget, args.gpu)
+    for route in args.route:
+        slot, model = route.split("=", 1)
+        recorder.routes[int(slot)] = model
+    recorder.meta["routes"] = {str(k): v for k, v in recorder.routes.items()}
     app = web.Application(client_max_size=16 * 1024 * 1024)
     app.on_startup.append(recorder.start)
     app.on_cleanup.append(recorder.stop)

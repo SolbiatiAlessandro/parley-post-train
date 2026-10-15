@@ -7,6 +7,7 @@ The API key comes from the local .env file (VLLM_API_KEY); vLLM reads it
 from the environment, so it never appears on a command line or in logs.
 """
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -26,14 +27,18 @@ image = (
 
 hf_cache = modal.Volume.from_name("parley-hf-cache", create_if_missing=True)
 vllm_cache = modal.Volume.from_name("parley-vllm-cache", create_if_missing=True)
+# LoRA adapters written by modal_train.py. /adapters/active.json lists the ones to
+# serve: {"adapters": ["iter0", "iter1"]}; each is requested by its name as "model".
+adapters = modal.Volume.from_name("parley-adapters", create_if_missing=True)
 
-app = modal.App("parley-qwen")
+# PARLEY_APP=parley-qwen-lora modal deploy modal_qwen.py  -> a second server (own URL)
+app = modal.App(os.environ.get("PARLEY_APP", "parley-qwen"))
 
 
 @app.function(
     image=image,
     gpu=GPU,
-    volumes={"/cache/hf": hf_cache, "/root/.cache/vllm": vllm_cache},
+    volumes={"/cache/hf": hf_cache, "/root/.cache/vllm": vllm_cache, "/adapters": adapters},
     secrets=[modal.Secret.from_dotenv(Path(__file__).parent)],
     timeout=2 * 60 * 60,
     scaledown_window=10 * 60,
@@ -42,14 +47,23 @@ app = modal.App("parley-qwen")
 @modal.concurrent(max_inputs=32)
 @modal.web_server(port=8000, startup_timeout=20 * 60)
 def serve():
-    subprocess.Popen(
-        [
-            "vllm", "serve", MODEL,
-            "--served-model-name", SERVED_NAME,
-            "--host", "0.0.0.0", "--port", "8000",
-            "--max-model-len", "32768",
-            "--language-model-only",
-            "--reasoning-parser", "qwen3",
-            "--gpu-memory-utilization", "0.90",
-        ]
-    )
+    import json
+    adapters.reload()
+    args = [
+        "vllm", "serve", MODEL,
+        "--served-model-name", SERVED_NAME,
+        "--host", "0.0.0.0", "--port", "8000",
+        "--max-model-len", "32768",
+        "--language-model-only",
+        "--reasoning-parser", "qwen3",
+        "--gpu-memory-utilization", "0.90",
+    ]
+    try:
+        active = json.load(open("/adapters/active.json"))["adapters"]
+    except (OSError, ValueError, KeyError):
+        active = []
+    if active:
+        args += ["--enable-lora", "--max-lora-rank", "16", "--max-loras", str(len(active)), "--lora-modules"]
+        args += [f"{name}=/adapters/{name}" for name in active]
+    print("vllm args:", args, flush=True)
+    subprocess.Popen(args)
