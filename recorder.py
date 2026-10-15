@@ -267,9 +267,11 @@ class Recorder:
                 **gpu_request,
                 "messages": gpu_request["messages"] + [{"role": "assistant", "content": closed}],
                 # Room for a long spoken line; the schema bounds strings to 160 characters.
-                # No repetition penalty here: it penalizes repeated JSON braces and quotes,
-                # and the answer then never closes.
+                # Qwen's own sampling settings for this short answer: under plain sampling the
+                # grammar-constrained answer sometimes degenerates into endless whitespace.
+                # (A repetition penalty is worse: it penalizes the closing braces.)
                 "max_tokens": max(body["max_tokens"], 600),
+                **SAMPLING[True],
                 "add_generation_prompt": False,
                 "continue_final_message": True,
             }
