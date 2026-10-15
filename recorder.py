@@ -263,7 +263,11 @@ class Recorder:
             continuation = {
                 **gpu_request,
                 "messages": gpu_request["messages"] + [{"role": "assistant", "content": closed}],
-                "max_tokens": body["max_tokens"],
+                # Room for a long spoken line (the game trims it to 160 characters) and a
+                # mild repetition penalty: a forced answer that loops past the cap is cut
+                # mid-JSON and ends the game.
+                "max_tokens": max(body["max_tokens"], 600),
+                "repetition_penalty": 1.1,
                 "add_generation_prompt": False,
                 "continue_final_message": True,
             }
