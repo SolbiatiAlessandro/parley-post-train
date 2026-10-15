@@ -58,7 +58,9 @@ def action_schema(system, user):
     me = me.group(1) if me else None
     seats = re.findall(r"^- (\S+): ", user, flags=re.M)
     others = [n for n in seats if n != me] or seats
-    props = {"say": {"type": "string"}}
+    # Length limits match the game's 160-character cap and rule out empty strings,
+    # which the game rejects ("whisper needs text").
+    props = {"say": {"type": "string", "minLength": 1, "maxLength": 160}}
     required = ["say"]
     shoot = re.search(r'"shoot": <one of (.+?)>', user)
     if shoot:
@@ -71,7 +73,8 @@ def action_schema(system, user):
         line = extras.group(1)
         if '"whisper"' in line:
             props["whisper"] = {"type": "object", "properties": {"to": {"type": "string", "enum": others},
-                                "text": {"type": "string"}}, "required": ["to", "text"], "additionalProperties": False}
+                                "text": {"type": "string", "minLength": 1, "maxLength": 160}},
+                                "required": ["to", "text"], "additionalProperties": False}
         if '"reveal"' in line:
             props["reveal"] = {"type": "object", "properties": {"to": {"type": "string", "enum": others},
                                "card": {"type": "string", "enum": ["friend", "enemy"]}}, "required": ["to", "card"],
