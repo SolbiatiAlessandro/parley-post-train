@@ -280,11 +280,15 @@ class Recorder:
         output = message.get("content") or ""
         usage = gpu_response["usage"]
         reasoning = message.get("reasoning_content") or message.get("reasoning")
-        if self.thinking and choice.get("finish_reason") == "length" and not output.strip():
-            # The thinking ran past its budget. Qwen's documented thinking-budget
-            # method: close the thinking with a fixed sentence and let the model
-            # write the answer from what it has so far. The game sees one reply.
+        if self.thinking and choice.get("finish_reason") == "length":
+            # The reply ran past the budget: either still thinking, or it closed the
+            # thinking late and the JSON itself was cut off. Either way, Qwen's
+            # documented thinking-budget method: close the thinking with a fixed
+            # sentence and let the model write the answer from what it has so far.
+            # Any partial answer is discarded. The game sees one reply.
             call["thinking_cut"] = True
+            if output.strip():
+                call["partial_answer_discarded"] = output
             closed = ("<think>\n" + (reasoning or "") + "\n\nConsidering the limited time by the user, "
                       "I have to give the solution based on the thinking directly now.\n</think>\n\n")
             continuation = {
