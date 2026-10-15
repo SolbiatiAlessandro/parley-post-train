@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parley Qwen Live</title>
+<style>
+  :root {
+    --bg: #111317; --panel: #181b21; --panel2: #1f232a; --line: #2c313a;
+    --text: #e6e8eb; --muted: #9aa1ab; --accent: #7cc4ff; --good: #7bd88f;
+    --warn: #ffcc66; --bad: #ff7b72; --mark: #3a3320; --secret: #3b2433;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 8px 16px;
+    border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  header .stat { color: var(--muted); font-size: 13px; }
+  header .stat b { color: var(--text); font-weight: 600; }
+  #status { padding: 2px 8px; border-radius: 10px; background: var(--panel2);
+    border: 1px solid var(--line); font-size: 12px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 44%);
+    height: calc(100% - 45px); }
+  #left { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
+  #left iframe { flex: 1; width: 100%; border: 0; background: #000; }
+  #left .placeholder { flex: 1; display: grid; place-items: center; color: var(--muted); padding: 24px; text-align: center; }
+  #right { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  #explain { padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  #explain summary { cursor: pointer; font-weight: 600; }
+  #explain ol { margin: 8px 0 4px; padding-left: 20px; }
+  #explain li { margin: 3px 0; }
+  #settings { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  #toolbar { display: flex; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--line);
+    flex-wrap: wrap; align-items: center; }
+  .chip { border: 1px solid var(--line); background: var(--panel2); color: var(--text);
+    border-radius: 12px; padding: 2px 10px; font-size: 12px; cursor: pointer; }
+  .chip.on { border-color: var(--accent); color: var(--accent); }
+  #follow { margin-left: auto; }
+  #calls { overflow-y: auto; flex: 1; padding: 10px 14px 40px; }
+  .card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+    margin-bottom: 10px; overflow: hidden; }
+  .card.waiting { border-color: var(--warn); }
+  .card.error { border-color: var(--bad); }
+  .head { display: flex; gap: 8px; align-items: baseline; padding: 8px 10px;
+    background: var(--panel2); flex-wrap: wrap; }
+  .num { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  .seat { font-weight: 700; }
+  .kind { color: var(--muted); font-size: 12.5px; }
+  .meta { margin-left: auto; color: var(--muted); font-size: 12px; font-family: var(--mono); }
+  .body { padding: 8px 10px 10px; }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 6px 0 3px; }
+  .output { font-family: var(--mono); font-size: 13px; background: #0d1a12; border: 1px solid #23402c;
+    border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; }
+  .output .k { color: var(--accent); }
+  .cards { font-size: 12.5px; margin-top: 6px; color: var(--muted); }
+  .cards b { color: var(--text); }
+  details.sec { margin-top: 6px; border-top: 1px dashed var(--line); padding-top: 6px; }
+  details.sec > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+  details.sec > summary b { color: var(--text); font-weight: 600; }
+  pre.txt { font-family: var(--mono); font-size: 12px; background: #0c0e11; border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; margin: 6px 0 0;
+    max-height: 480px; overflow-y: auto; }
+  mark { background: var(--mark); color: var(--warn); border-radius: 3px; }
+  mark.secret { background: var(--secret); color: #ff9ecf; }
+  .special { color: #c39bff; }
+  .gen { background: #0d1a12; color: var(--good); }
+  .err { color: var(--bad); font-family: var(--mono); font-size: 12px; white-space: pre-wrap; }
+  .hint { color: var(--muted); font-size: 12px; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 55vh auto; height: auto; }
+    #left { border-right: 0; border-bottom: 1px solid var(--line); }
+    #calls { overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Parley · 5 × Qwen3.5-4B</h1>
+  <span id="status">connecting…</span>
+  <span class="stat">model calls <b id="s-calls">0</b></span>
+  <span class="stat">tokens in/out <b id="s-tokens">0 / 0</b></span>
+  <span class="stat">avg reply <b id="s-lat">–</b></span>
+  <span class="stat">GPU time <b id="s-gpu">–</b> ≈ <b id="s-cost">–</b> (estimate)</span>
+</header>
+<main>
+  <section id="left"><div class="placeholder" id="placeholder">The table appears here when the game starts.</div></section>
+  <section id="right">
+    <div id="explain">
+      <details open>
+        <summary>What the sidebar shows</summary>
+        <ol>
+          <li>The game decides who acts next. For that one cog it writes a <b>system message</b> (the rules, the same every time except the cog's name) and a <b>user message</b> (standings, the full table history, this cog's secret FRIEND/ENEMY cards, the operator's strategy text, and the exact JSON it must reply with).</li>
+          <li>The recorder on the Mac mini forwards both to Qwen3.5-4B on a Modal GPU. Qwen sees only that text: it has no memory between calls. Everything it "remembers" is in the history the game writes.</li>
+          <li>Qwen writes one JSON object (the <b>output</b>). The game checks it, then applies it: the speech appears at the table on the left, and the shot is rolled. An invalid reply ends the whole game: there are no retries or substitute moves.</li>
+        </ol>
+        <div class="hint">The table view on the left is public: no cards, no aim. The sidebar shows each cog's private prompt, so you see the secret cards too.</div>
+      </details>
+      <div id="settings"></div>
+    </div>
+    <div id="toolbar"><span class="hint">Show:</span><span id="chips"></span>
+      <button class="chip on" id="follow">follow newest</button></div>
+    <div id="calls"></div>
+  </section>
+</main>
+<script>
+const calls = new Map();
+const seatOrder = [];
+const palette = ["#7cc4ff", "#ffb86b", "#7bd88f", "#ff8fb1", "#c39bff", "#f1e05a"];
+let meta = {}, filter = "all", follow = true;
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const fmt = n => Number(n || 0).toLocaleString();
+const seatColor = name => palette[Math.max(0, seatOrder.indexOf(name)) % palette.length];
+
+function prettyOutput(call) {
+  if (call.parsed && typeof call.parsed === "object") {
+    const lines = Object.entries(call.parsed).map(([k, v]) =>
+      `  <span class="k">"${esc(k)}"</span>: ${esc(JSON.stringify(v))}`);
+    return "{\n" + lines.join(",\n") + "\n}";
+  }
+  return esc(call.output);
+}
+
+function highlightUser(text) {
+  return esc(text).split("\n").map(line => {
+    if (/^Your SECRET cards/.test(line)) return `<mark class="secret">${line}</mark>`;
+    if (/^(GUIDANCE FROM YOUR OPERATOR|You are IT\.|You are not IT|You are OUT|Respond with JSON|Optional extra fields|Choose your AIM|You may instead PASS)/.test(line))
+      return `<mark>${line}</mark>`;
+    return line;
+  }).join("\n");
+}
+
+function highlightTemplate(text, output) {
+  const t = esc(text).replace(/(&lt;\|[a-z_]+\|&gt;|&lt;\/?think&gt;)/g, '<span class="special">$1</span>');
+  return t + `<span class="gen">${esc(output)}</span>`;
+}
+
+function section(id, call, title, inner) {
+  const key = `${call.n}:${id}`;
+  const open = openState.has(key) ? openState.get(key) : (id === "user" && call.n === autoOpenN);
+  return `<details class="sec" data-key="${key}" ${open ? "open" : ""}><summary>${title}</summary>${inner}</details>`;
+}
+const openState = new Map();  // only sections the viewer clicked
+let autoOpenN = 0;            // newest call: its user message opens by itself
+
+function renderCard(call) {
+  let el = document.getElementById("call-" + call.n);
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "call-" + call.n;
+    el.className = "card";
+    const list = document.getElementById("calls");
+    list.prepend(el);
+  }
+  el.className = "card " + (call.status === "done" ? "" : call.status === "error" ? "error" : "waiting");
+  el.dataset.seat = call.seat;
+  el.style.display = (filter === "all" || filter === call.seat) ? "" : "none";
+  const req = call.game_request || {};
+  const user = (req.messages && req.messages[0] && req.messages[0].content) || "";
+  const timing = call.status === "done"
+    ? `${(call.latency_ms / 1000).toFixed(1)} s · ${fmt(call.input_tokens)} in → ${fmt(call.output_tokens)} out`
+    : call.status === "error" ? "error" : "waiting for Qwen…";
+  let body = "";
+  if (call.status === "done") {
+    body += `<div class="label">Output — what Qwen wrote${call.finish_reason === "length" ? " (cut off at the token limit)" : ""}</div>
+      <div class="output">${prettyOutput(call)}</div>`;
+    if (call.parsed === null) body += `<div class="err">Not valid JSON: the game will reject this reply.</div>`;
+    if (call.reasoning) body += section("reasoning", call, "<b>Thinking</b> (hidden from the game)", `<pre class="txt">${esc(call.reasoning)}</pre>`);
+  } else if (call.status === "error") {
+    body += `<div class="err">${esc(call.error)}</div>`;
+  } else {
+    body += `<div class="hint">Qwen is writing…</div>`;
+  }
+  if (call.friend) body += `<div class="cards">Secret cards in this prompt: FRIEND <b>${esc(call.friend)}</b> · ENEMY <b>${esc(call.enemy)}</b></div>`;
+  body += section("user", call, `<b>Input: user message</b> (${fmt(user.length)} characters; changes every call)`, `<pre class="txt">${highlightUser(user)}</pre>`);
+  body += section("system", call, `<b>Input: system message</b> (rules)`, `<pre class="txt">${esc(req.system)}</pre>`);
+  body += section("template", call, `<b>Exact text Qwen reads</b>${call.template_tokens ? ` (${fmt(call.template_tokens)} tokens, after Qwen's chat template)` : ""}`,
+    call.template_text ? `<div class="hint">Purple: special tokens added by the chat template. Green: the tokens Qwen generated.</div><pre class="txt">${highlightTemplate(call.template_text, call.output || "")}</pre>`
+      : `<div class="hint">${call.template_error ? esc(call.template_error) : "Loading…"}</div>`);
+  body += section("raw", call, "<b>Raw requests and replies</b> (game → recorder → GPU → game)",
+    `<div class="label">Game → recorder (Anthropic Messages format)</div><pre class="txt">${esc(JSON.stringify(req, null, 1))}</pre>
+     <div class="label">Recorder → GPU server (OpenAI chat format)</div><pre class="txt">${esc(JSON.stringify(call.gpu_request, null, 1))}</pre>
+     <div class="label">GPU server → recorder</div><pre class="txt">${esc(JSON.stringify(call.gpu_response, null, 1))}</pre>
+     <div class="label">Recorder → game</div><pre class="txt">${esc(JSON.stringify(call.reply_to_game, null, 1))}</pre>`);
+  el.innerHTML = `<div class="head"><span class="num">#${call.n}</span>
+    <span class="seat" style="color:${seatColor(call.seat)}">${esc(call.seat)}</span>
+    <span class="kind">${esc(call.kind)}</span><span class="meta">${timing}</span></div>
+    <div class="body">${body}</div>`;
+  el.querySelectorAll("details.sec > summary").forEach(sm => sm.addEventListener("click", () => {
+    const d = sm.parentElement; openState.set(d.dataset.key, !d.open);
+  }));
+}
+
+function renderChips() {
+  const chips = ["all", ...seatOrder].map(name =>
+    `<button class="chip ${filter === name ? "on" : ""}" data-seat="${esc(name)}" ${name === "all" ? "" : `style="color:${seatColor(name)}"`}>${esc(name)}</button>`);
+  document.getElementById("chips").innerHTML = chips.join(" ");
+  document.querySelectorAll("#chips .chip").forEach(b => b.onclick = () => {
+    filter = b.dataset.seat; renderChips();
+    document.querySelectorAll(".card").forEach(c => c.style.display = (filter === "all" || c.dataset.seat === filter) ? "" : "none");
+  });
+}
+
+function renderStats() {
+  const done = [...calls.values()].filter(c => c.status === "done");
+  document.getElementById("s-calls").textContent = calls.size;
+  document.getElementById("s-tokens").textContent = `${fmt(done.reduce((a, c) => a + c.input_tokens, 0))} / ${fmt(done.reduce((a, c) => a + c.output_tokens, 0))}`;
+  document.getElementById("s-lat").textContent = done.length ? (done.reduce((a, c) => a + c.latency_ms, 0) / done.length / 1000).toFixed(1) + " s" : "–";
+}
+
+function renderMeta() {
+  document.getElementById("status").textContent = meta.status || "";
+  const s = meta.sampling || {};
+  document.getElementById("settings").textContent =
+    `${meta.model} on one ${meta.gpu} · thinking ${meta.thinking ? "on" : "off"} · ${meta.decoding} · top_p ${s.top_p} top_k ${s.top_k} presence_penalty ${s.presence_penalty} · temperature and max_tokens set by the game`;
+  if (meta.game && meta.game.running && !document.querySelector("#left iframe")) {
+    const frame = document.createElement("iframe");
+    frame.src = `http://${location.hostname}:${meta.parley_port}/client/global`;
+    document.getElementById("placeholder").replaceWith(frame);
+  }
+}
+
+setInterval(() => {
+  if (!meta.gpu_started) return;
+  const end = meta.gpu_stopped || Date.now() / 1000;
+  const minutes = (end - meta.gpu_started) / 60;
+  document.getElementById("s-gpu").textContent = minutes.toFixed(1) + " min";
+  document.getElementById("s-cost").textContent = "$" + (minutes / 60 * meta.gpu_dollars_per_hour).toFixed(2);
+}, 1000);
+
+document.getElementById("follow").onclick = e => {
+  follow = !follow; e.target.classList.toggle("on", follow);
+};
+
+const source = new EventSource("/events");
+source.onmessage = e => {
+  const event = JSON.parse(e.data);
+  if (event.type === "meta") { meta = event.meta; renderMeta(); return; }
+  const call = event.call;
+  const isNew = !calls.has(call.n);
+  calls.set(call.n, call);
+  if (call.seat && !seatOrder.includes(call.seat)) { seatOrder.push(call.seat); renderChips(); }
+  if (isNew && call.n > autoOpenN) {
+    // The newest call's user message opens by itself; the previous one closes
+    // again unless the viewer clicked it.
+    const previous = calls.get(autoOpenN);
+    autoOpenN = call.n;
+    if (previous) renderCard(previous);
+  }
+  renderCard(call);
+  renderStats();
+  if (isNew && follow) document.getElementById("calls").scrollTop = 0;
+};
+source.onerror = () => { document.getElementById("status").textContent = "recorder disconnected"; };
+renderChips();
+</script>
+</body>
+</html>
