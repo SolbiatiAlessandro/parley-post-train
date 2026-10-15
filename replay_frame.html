@@ -56,7 +56,7 @@
   ParleyRenderer.bindFeedToggle(document.getElementById("feedtoggle"));
   // Copied from Parley's client/replay.html (b46e7a8). Only change: the
   // payload comes from the recorder's /api/replay instead of the /replay socket.
-  fetch("/api/replay").then(function (r) { return r.json(); }).then(function (data) {
+  fetch("api/replay").then(function (r) { return r.json(); }).then(function (data) {
     var payload = data.payload;
     document.getElementById("loading").style.display = "none";
     ParleyRenderer.attachReplay({

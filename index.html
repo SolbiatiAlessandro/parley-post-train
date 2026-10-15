@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parley Games</title>
+<style>
+  :root { --bg: #111317; --panel: #181b21; --panel2: #1f232a; --line: #2c313a; --text: #e6e8eb;
+    --muted: #9aa1ab; --accent: #7cc4ff; --good: #7bd88f; --warn: #ffcc66; --bad: #ff7b72;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin-bottom: 22px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 14px 16px; margin-bottom: 14px;
+    display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; align-items: center; }
+  .card h2 { font-size: 16px; margin: 0 0 4px; }
+  .card .facts { color: var(--muted); font-size: 13.5px; }
+  .card .facts b { color: var(--text); font-weight: 600; }
+  .state { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 12px; border: 1px solid var(--line); margin-left: 8px; vertical-align: middle; }
+  .state.finished { color: var(--good); border-color: var(--good); }
+  .state.running { color: var(--warn); border-color: var(--warn); }
+  .state.stopped, .state.failed { color: var(--bad); border-color: var(--bad); }
+  .actions { display: flex; flex-direction: column; gap: 8px; }
+  a.btn { display: inline-block; text-align: center; background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 14px; text-decoration: none; font-size: 14px; }
+  a.btn.main { border-color: var(--accent); color: var(--accent); }
+  a.btn:hover { background: #262b34; }
+  .hint { color: var(--muted); font-size: 13px; }
+  @media (max-width: 640px) { .card { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Parley games</h1>
+  <div class="sub">Every game is recorded. Each replay starts paused: press ▶ Play or use the arrow keys to step through one model call at a time, with the model's input, thinking and output beside the table.</div>
+  <div id="list"><div class="hint">Loading…</div></div>
+</main>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const when = t => t ? new Date(t * 1000).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"}) : "";
+async function load() {
+  const runs = await (await fetch("api/runs")).json();
+  document.getElementById("list").innerHTML = runs.map(r => {
+    const title = `${(r.model || "").replace("Qwen/", "")} × 5${r.thinking ? " · thinking on" : " · thinking off"}`;
+    const facts = [
+      `started <b>${when(r.started)}</b>`,
+      `<b>${r.calls}</b> model calls` + (r.avg_latency_s ? ` · <b>${r.avg_latency_s} s</b> per call` : ""),
+      r.thinking ? `thinking budget <b>${r.thinking_budget}</b> tokens` + (r.cut ? ` · <b>${r.cut}</b> calls cut off` : "") : "",
+      r.gpu ? `GPU <b>${r.gpu}</b>` : "",
+      r.winner ? `winner <b>${esc(r.winner)}</b>` : "",
+      r.state === "running" ? `<span style="color:var(--warn)">still playing — the table replay appears when it ends; the calls so far can be stepped through now</span>` : "",
+      r.status && r.state !== "finished" && r.state !== "running" ? esc(r.status) : "",
+    ].filter(Boolean).join(" · ");
+    const main = r.has_replay
+      ? `<a class="btn main" href="g/${esc(r.name)}/replay">▶ Replay: table + model calls</a>`
+      : `<a class="btn main" href="g/${esc(r.name)}/replay">▶ Step through the model calls</a>`;
+    return `<div class="card"><div><h2>${esc(title)}<span class="state ${r.state}">${r.state}</span></h2>
+      <div class="facts">${facts}</div><div class="hint" style="margin-top:4px">run <code>${esc(r.name)}</code>${r.seed ? ` · seed ${r.seed}` : ""}</div></div>
+      <div class="actions">${main}</div></div>`;
+  }).join("") || `<div class="hint">No recorded games yet.</div>`;
+}
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>
