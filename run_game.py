@@ -86,7 +86,7 @@ def wait_for_server(port, seconds=60):
     raise SystemExit("Parley server did not become healthy")
 
 
-async def play_seat(port, slot, token, finals):
+async def play_seat(port, slot, token, finals, prompt):
     url = f"ws://127.0.0.1:{port}/player?slot={slot}&token={token}"
     # No client pings: a seat only listens, and a missed pong would count as a
     # disconnect, which ends the whole game.
@@ -96,7 +96,7 @@ async def play_seat(port, slot, token, finals):
             message = json.loads(raw)
             kind = message.get("type")
             if kind == "welcome" and not registered:
-                await ws.send(json.dumps({"type": "prompt", "prompt": OPERATOR_PROMPT, "scripted": False}))
+                await ws.send(json.dumps({"type": "prompt", "prompt": prompt, "scripted": False}))
                 registered = True
                 print(f"slot {slot} is {message['name']}; operator prompt delivered", flush=True)
             elif kind == "final":
@@ -114,6 +114,9 @@ async def main():
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--thinking", action="store_true",
                         help="thinking mode: Qwen's temperature 1.0 and longer deadlines")
+    parser.add_argument("--operator-note", default="",
+                        help="text appended to every seat's operator prompt (e.g. a thinking-length request)")
+    parser.add_argument("--label", default="", help="short tag added to the player names")
     args = parser.parse_args()
     run_dir = Path(args.run_dir).resolve()
     run_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -122,7 +125,8 @@ async def main():
     config = {
         "seed": seed,
         "tokens": [secrets.token_hex(12) for _ in range(5)],
-        "players": [{"name": f"qwen3.5-4b{'-think' if args.thinking else ''}-{i + 1}"} for i in range(5)],
+        "players": [{"name": f"qwen3.5-4b{'-think' if args.thinking else ''}{'-' + args.label if args.label else ''}-{i + 1}"}
+                    for i in range(5)],
         "model": "qwen/qwen3.5-4b",
         # Pacing for a watched local game (not the hosted defaults): slower
         # turns, a longer model deadline and episode budget. Parley deals a
@@ -161,7 +165,9 @@ async def main():
         await status(session, args.recorder, status="game running", game={"running": True, "seed": seed})
         finals = {}
         try:
-            await asyncio.gather(*(play_seat(args.parley_port, slot, token, finals)
+            prompt = OPERATOR_PROMPT + ("\n" + args.operator_note.strip() + "\n" if args.operator_note.strip() else "")
+            (run_dir / "operator_prompt.txt").write_text(prompt)
+            await asyncio.gather(*(play_seat(args.parley_port, slot, token, finals, prompt)
                                    for slot, token in enumerate(config["tokens"])))
         finally:
             code = subprocess.run(["docker", "wait", name], capture_output=True, text=True).stdout.strip()

@@ -248,6 +248,7 @@ function hookFrame() {
   }, true);
   position = readPosition();
   render();
+  if (decisions.length && position === 0) seek(decisions[0].eventAfter);  // open on the first model call
 }
 
 fetch("api/replay").then(r => r.json()).then(d => {
@@ -266,7 +267,7 @@ fetch("api/replay").then(r => r.json()).then(d => {
       <p class="hint">You can still step through every model call on the right: ▶ Play, the arrow keys, or the list at the bottom.</p>`;
     document.getElementById("frame").replaceWith(note);
     if (d.meta) document.getElementById("title").textContent = `Parley calls · 5 × ${(d.meta.model || "").replace("Qwen/", "")}${d.meta.thinking ? " · thinking on" : ""}`;
-    position = 0; render(); return;
+    position = events.length ? 1 : 0; render(); return;  // open on the first call, not on an empty page
   }
   if (d.meta) document.getElementById("title").textContent = `Parley replay · 5 × ${(d.meta.model || "").replace("Qwen/", "")}${d.meta.thinking ? " · thinking on" : ""}`;
   names = d.payload.names;
