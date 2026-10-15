@@ -32,6 +32,9 @@ GPU_DOLLARS_PER_HOUR = {"L40S": 0.000542 * 3600, "H100": 0.001097 * 3600}
 SAMPLING = {
     False: {"top_p": 0.8, "top_k": 20, "min_p": 0.0, "presence_penalty": 1.5},
     True: {"top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 1.5},
+    # RL rollouts: sample the policy's own distribution (no top-p/top-k/penalty), so the
+    # trainer scores the distribution the samples came from.
+    "rl": {"top_p": 1.0, "top_k": -1, "min_p": 0.0, "presence_penalty": 0.0},
 }
 # Only the game container (via Docker's host gateway) and this machine may
 # spend GPU time through /v1/messages; the page itself is open on the LAN.
@@ -105,6 +108,7 @@ class Recorder:
         self.auth = {"Authorization": f"Bearer {key}"}
         self.run_dir = Path(run_dir)
         self.thinking = thinking
+        self.sampling = SAMPLING[thinking]
         self.routes = {}  # seat slot -> served model name (for mixed tables)
         # Extra output tokens for the thinking text, on top of the game's cap
         # for the JSON answer. If the thinking runs past it, the answer is
@@ -119,7 +123,7 @@ class Recorder:
             "gpu_dollars_per_hour": GPU_DOLLARS_PER_HOUR[gpu],
             "thinking": thinking,
             "thinking_budget": self.thinking_budget,
-            "sampling": SAMPLING[thinking],
+            "sampling": self.sampling,
             "decoding": "JSON schema per call (legal names only; vLLM response_format json_schema)",
             "parley_port": parley_port,
             "status": "recorder started",
@@ -214,7 +218,7 @@ class Recorder:
                          {"role": "user", "content": user}],
             "max_tokens": body["max_tokens"] + self.thinking_budget,
             "temperature": body["temperature"],
-            **SAMPLING[self.thinking],
+            **self.sampling,
             "chat_template_kwargs": {"enable_thinking": self.thinking},
             "response_format": {"type": "json_schema",
                                 "json_schema": {"name": "parley_action", "schema": action_schema(system, user)}},
@@ -419,6 +423,7 @@ def main():
     parser.add_argument("--thinking", action="store_true", help="let the model think before the JSON")
     parser.add_argument("--thinking-budget", type=int, default=3000)
     parser.add_argument("--gpu", choices=sorted(GPU_DOLLARS_PER_HOUR), default="H100")
+    parser.add_argument("--sampling", choices=["qwen", "rl"], default="qwen")
     parser.add_argument("--route", action="append", default=[],
                         help="slot=model: serve this seat from another model name (repeatable)")
     args = parser.parse_args()
@@ -426,6 +431,9 @@ def main():
     Path(args.run_dir).mkdir(mode=0o700, parents=True, exist_ok=True)
     recorder = Recorder(args.modal_url, key, args.run_dir, args.parley_port,
                         args.thinking, args.thinking_budget, args.gpu)
+    if args.sampling == "rl":
+        recorder.sampling = SAMPLING["rl"]
+        recorder.meta["sampling"] = recorder.sampling
     for route in args.route:
         slot, model = route.split("=", 1)
         recorder.routes[int(slot)] = model

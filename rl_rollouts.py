@@ -43,7 +43,8 @@ async def run_one(index, args, modal_url, used_ports):
     rec_port = free_port(9000 + index * 2, used_ports)
     game_port = free_port(9001 + index * 2, used_ports)
     rec_cmd = [str(PY), str(HERE / "recorder.py"), "--modal-url", modal_url, "--run-dir", str(run_dir),
-               "--port", str(rec_port), "--parley-port", str(game_port), "--gpu", args.gpu]
+               "--port", str(rec_port), "--parley-port", str(game_port), "--gpu", args.gpu,
+               "--sampling", args.sampling]
     if args.thinking:
         rec_cmd += ["--thinking", "--thinking-budget", str(args.thinking_budget)]
     if args.trained:
@@ -100,6 +101,7 @@ async def main():
     parser.add_argument("--rotate-slot", action="store_true", help="trained seat = game index mod 5")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--gpu", default="H100")
+    parser.add_argument("--sampling", choices=["qwen", "rl"], default="rl")
     parser.add_argument("--stagger", type=float, default=2.0, help="seconds between game launches")
     args = parser.parse_args()
     modal_url = (HERE / "logs" / "modal-url").read_text().strip()

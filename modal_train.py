@@ -64,8 +64,8 @@ def make_adapter(name: str, rank: int = 16, alpha: int = 32):
 @app.function(image=image, volumes=VOLUMES, gpu="H100", timeout=3 * 60 * 60)
 def train_step(prev: str, new: str, data_file: str, lr: float = 1e-5, epochs: int = 1,
                clip: float = 0.2, clip_high: float = 0.28, kl_coef: float = 0.0,
-               max_len: int = 8192, micro_batch_tokens: int = 16384, grad_accum: int = 8,
-               loss_agg: str = "token", max_grad_norm: float = 1.0):
+               max_len: int = 8192, minibatches: int = 4, grad_accum: int = 0,
+               loss_agg: str = "token", max_grad_norm: float = 1.0, kl_log_fraction: float = 0.1):
     """One policy-gradient update (PPO/GRPO-style clipped objective) on a LoRA adapter.
 
     Advantages come precomputed in the data file. With epochs=1 the ratio is 1
@@ -121,18 +121,22 @@ def train_step(prev: str, new: str, data_file: str, lr: float = 1e-5, epochs: in
         mask = torch.tensor(ex["mask"], device="cuda")
         return logp[mask], entropy[mask]
 
-    # Old log-probs (policy before this update) and reference log-probs (base model) if KL is on.
-    old, ref = [], []
+    if grad_accum <= 0:
+        grad_accum = max(1, math.ceil(len(examples) / max(minibatches, 1)))
+    # Old log-probs (policy before this update); reference (base model) log-probs for the
+    # KL term if it is on, else for a logged sample only.
+    old, ref = [], {}
     model.eval()
     with torch.no_grad():
-        for ex in examples:
+        for i, ex in enumerate(examples):
             lp, _ = logprobs_and_entropy(model, ex)
             old.append(lp)
-            if kl_coef > 0:
+            if kl_coef > 0 or (kl_log_fraction > 0 and i % max(1, int(1 / kl_log_fraction)) == 0):
                 with model.disable_adapter():
                     rl, _ = logprobs_and_entropy(model, ex)
-                ref.append(rl)
+                ref[i] = rl
     model.train()
+    print(f"grad_accum {grad_accum} -> {math.ceil(len(examples) / grad_accum)} optimizer steps", flush=True)
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr, weight_decay=0.0)
     log = {"loss": [], "entropy": [], "ratio_clipped": [], "kl": []}
     order = list(range(len(examples)))
@@ -155,16 +159,18 @@ def train_step(prev: str, new: str, data_file: str, lr: float = 1e-5, epochs: in
             else:
                 loss = -surrogate.mean()
             kl = torch.zeros((), device="cuda")
-            if kl_coef > 0:
+            if idx in ref:
                 # k3 estimator of KL(policy || base) as in GRPO
                 d = ref[idx] - lp
                 kl = (torch.exp(d) - d - 1).mean()
-                loss = loss + kl_coef * kl
+                if kl_coef > 0:
+                    loss = loss + kl_coef * kl
             (loss / grad_accum).backward()
             log["loss"].append(loss.item())
             log["entropy"].append(ent.mean().item())
             log["ratio_clipped"].append(((ratio < 1 - clip) | (ratio > 1 + clip_high)).float().mean().item())
-            log["kl"].append(kl.item())
+            if idx in ref:
+                log["kl"].append(kl.item())
             if (i + 1) % grad_accum == 0 or i == len(order) - 1:
                 torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], max_grad_norm)
                 optimizer.step()
@@ -183,7 +189,8 @@ def train_step(prev: str, new: str, data_file: str, lr: float = 1e-5, epochs: in
         "mean_loss": sum(log["loss"]) / max(len(log["loss"]), 1),
         "mean_entropy": sum(log["entropy"]) / max(len(log["entropy"]), 1),
         "clipped_fraction": sum(log["ratio_clipped"]) / max(len(log["ratio_clipped"]), 1),
-        "mean_kl": sum(log["kl"]) / max(len(log["kl"]), 1),
+        "mean_kl_to_base_sampled": sum(log["kl"]) / max(len(log["kl"]), 1),
+        "kl_samples": len(log["kl"]),
         "seconds": round(time.monotonic() - started),
     }
     with open(f"/data/train-{new}.json", "w") as f:

@@ -71,7 +71,9 @@ def main():
     parser.add_argument("--length-penalty", type=float, default=0.1, help="reward lost per 1,000 mean thinking tokens over the budget")
     parser.add_argument("--budget", type=int, default=1000)
     parser.add_argument("--cut-penalty", type=float, default=0.1, help="reward lost when every call hit the hard cutoff")
-    parser.add_argument("--std-normalize", action="store_true", help="divide by the table's std (GRPO); default is Dr. GRPO style, no division")
+    parser.add_argument("--std-normalize", action="store_true", help="divide by the table's std (GRPO); default is no division")
+    parser.add_argument("--baseline", choices=["loo", "mean"], default="loo",
+                        help="loo: reward minus the mean of the other seats (RLOO); mean: minus the table mean")
     parser.add_argument("--train-model", default=None, help="only seats served by this model name (mixed tables)")
     args = parser.parse_args()
     out = Path(args.out)
@@ -91,7 +93,11 @@ def main():
             std = statistics.pstdev(rewards) if args.std_normalize else 1.0
             n_games += 1
             for slot, row in rows.items():
-                adv = (row["reward"] - mean) / (std + 1e-6)
+                if args.baseline == "loo":
+                    others = [r["reward"] for k, r in rows.items() if k != slot]
+                    adv = (row["reward"] - statistics.mean(others)) / (std + 1e-6)
+                else:
+                    adv = (row["reward"] - mean) / (std + 1e-6)
                 summary.append({"game": run_dir.name, "slot": slot, "score": row["score"], "reward": row["reward"],
                                 "advantage": adv, "mean_thinking_tokens": row["mean_thinking_tokens"],
                                 "cut_fraction": row["cut_fraction"], "calls": len(row["calls"])})
