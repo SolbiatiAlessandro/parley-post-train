@@ -75,11 +75,13 @@ def main():
     parser.add_argument("--baseline", choices=["loo", "mean"], default="loo",
                         help="loo: reward minus the mean of the other seats (RLOO); mean: minus the table mean")
     parser.add_argument("--train-model", default=None, help="only seats served by this model name (mixed tables)")
+    parser.add_argument("--max-calls", type=int, default=0, help="random subsample of calls to cap training time (0 = all)")
     args = parser.parse_args()
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     n_rows = n_games = 0
     summary = []
+    pending = []
     with out.open("w") as stream:
         for run in args.runs:
             run_dir = Path(run)
@@ -106,12 +108,18 @@ def main():
                         continue
                     if not call.get("template_text"):
                         continue
-                    stream.write(json.dumps({
+                    pending.append({
                         "prompt": call["template_text"], "segments": segments_for(call),
                         "advantage": adv, "group": run_dir.name, "seat": call["seat"], "game": run_dir.name,
                         "cut": bool(call.get("thinking_cut")), "thinking_tokens": call["output_tokens"],
-                    }) + "\n")
-                    n_rows += 1
+                    })
+        if args.max_calls and len(pending) > args.max_calls:
+            import random
+            random.Random(0).shuffle(pending)
+            pending = pending[:args.max_calls]
+        for row in pending:
+            stream.write(json.dumps(row) + "\n")
+        n_rows = len(pending)
     (out.with_suffix(".summary.json")).write_text(json.dumps(summary, indent=1))
     print(f"{n_games} games, {n_rows} training calls -> {out}")
     if summary:

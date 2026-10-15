@@ -79,6 +79,7 @@ def main():
     parser.add_argument("--cut-penalty", type=float, default=0.0)
     parser.add_argument("--std-normalize", action="store_true")
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--max-calls", type=int, default=600, help="cap on training calls per iteration (training time)")
     parser.add_argument("--served-name", default=None,
                         help="model name the rollouts were served under, if not iter(k-1) (iteration 1 played on the base server as qwen3.5-4b)")
     args = parser.parse_args()
@@ -118,7 +119,8 @@ def main():
             raise SystemExit(f"only {len(finished)} games finished; not training on so few")
     data_file = f"rl/{prefix}.jsonl"
     cmd = [PY, HERE / "build_trajectories.py", "--out", data_file, "--length-penalty", args.length_penalty,
-           "--cut-penalty", args.cut_penalty, "--train-model", args.served_name or policy] + sorted(str(p) for p in (HERE / "runs").glob(f"{prefix}-g*"))
+           "--cut-penalty", args.cut_penalty, "--max-calls", args.max_calls,
+           "--train-model", args.served_name or policy] + sorted(str(p) for p in (HERE / "runs").glob(f"{prefix}-g*"))
     if args.std_normalize:
         cmd.append("--std-normalize")
     sh(cmd, f"build-{prefix}.log")
