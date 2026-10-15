@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parley — Replay</title>
+<link rel="stylesheet" href="/parley/client/chrome.css">
+</head>
+<body class="replay-viewer">
+<div id="layout">
+  <div id="topband">
+      <div id="wordmark">PAR<span>LEY</span></div>
+      <div id="clock">ROUND 1</div>
+      <div id="topright">
+        <span id="statuschip">replay</span>
+        <button id="feedtoggle">CHAT »</button>
+      </div>
+    </div>
+  <div id="stage">
+    <div id="board-wrap">
+      <canvas id="table" width="960" height="600" role="img" aria-label="Parley table: cogs, health, and friend and enemy cards"></canvas>
+      <div class="table-legend"><span>♥ Friend</span><span>× Enemy</span><span>Hover a cog to see its cards</span></div>
+      <div id="lightpool"></div>
+      <div id="grain"></div>
+      <div id="endscreen"></div>
+    </div>
+    <div id="now-playing" role="region" tabindex="0" aria-label="Current replay event"></div>
+    <div id="transport">
+      <div class="scrub" id="scrub"></div>
+      <div class="tbar">
+        <button class="tbtn" id="previous" type="button" aria-label="Previous event">‹</button>
+        <button class="tbtn" id="play" type="button" aria-label="Pause replay">Pause</button>
+        <button class="tbtn" id="next" type="button" aria-label="Next event">›</button>
+        <span class="transport-hint">Drag to explore</span>
+        <span class="tpos" id="pos">0 / 0</span>
+      </div>
+    </div>
+    </div>
+  <aside id="replay-sidebar" aria-label="Match points and table chat">
+    <section class="standings" aria-label="Current match points">
+      <div class="section-label"><span>Match points</span><span>PTS</span></div>
+      <div id="scorebug"></div>
+      <p class="score-key">Survive +3 <span>Friend +1</span> Enemy +1</p>
+    </section>
+    <div class="chat-header">
+      <h1>Table chat</h1>
+      <button id="chat-follow" class="tbtn" type="button">Following</button>
+    </div>
+    <div id="feed" role="region" aria-label="Replay conversation" tabindex="0"></div>
+  </aside>
+</div>
+<div id="loading">LOADING REPLAY…</div>
+<script src="/parley/client/renderer.js"></script>
+<script>
+  var canvas = document.getElementById("table");
+  ParleyRenderer.bindFeedToggle(document.getElementById("feedtoggle"));
+  // Copied from Parley's client/replay.html (b46e7a8). Only change: the
+  // payload comes from the recorder's /api/replay instead of the /replay socket.
+  fetch("/api/replay").then(function (r) { return r.json(); }).then(function (data) {
+    var payload = data.payload;
+    document.getElementById("loading").style.display = "none";
+    ParleyRenderer.attachReplay({
+      canvas: canvas,
+      feed: document.getElementById("feed"),
+      followButton: document.getElementById("chat-follow"),
+      scrub: document.getElementById("scrub"),
+      playButton: document.getElementById("play"),
+      previousButton: document.getElementById("previous"),
+      nextButton: document.getElementById("next"),
+      nowPlaying: document.getElementById("now-playing"),
+      label: document.getElementById("pos"),
+      clock: document.getElementById("clock"),
+      scorebug: document.getElementById("scorebug"),
+      endscreen: document.getElementById("endscreen"),
+      assetBase: "/parley/client/assets",
+      payload: payload
+    });
+  }).catch(function () {
+    document.getElementById("loading").textContent = "REPLAY FAILED TO LOAD";
+  });
+</script>
+</body>
+</html>

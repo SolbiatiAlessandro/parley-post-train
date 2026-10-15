@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parley Qwen Replay</title>
+<style>
+  :root {
+    --bg: #111317; --panel: #181b21; --panel2: #1f232a; --line: #2c313a;
+    --text: #e6e8eb; --muted: #9aa1ab; --accent: #7cc4ff; --good: #7bd88f;
+    --warn: #ffcc66; --bad: #ff7b72; --mark: #3a3320; --secret: #3b2433;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 10px; padding: 8px 16px;
+    border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; }
+  button, select { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 12px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: default; }
+  #pos { color: var(--muted); font-family: var(--mono); font-size: 12.5px; }
+  .hint { color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, 42%); height: calc(100% - 49px); }
+  #frame { width: 100%; height: 100%; border: 0; border-right: 1px solid var(--line); background: #000; }
+  #side { overflow-y: auto; padding: 12px 14px 40px; }
+  .now { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel); margin-bottom: 10px; }
+  .now .label, .label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 8px 0 3px; }
+  .now .label { margin-top: 0; }
+  .card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+  .head { display: flex; gap: 8px; align-items: baseline; padding: 8px 10px; background: var(--panel2); flex-wrap: wrap; }
+  .seat { font-weight: 700; font-size: 15px; }
+  .kind, .meta { color: var(--muted); font-size: 12.5px; }
+  .meta { margin-left: auto; font-family: var(--mono); font-size: 12px; }
+  .body { padding: 4px 10px 10px; }
+  .output { font-family: var(--mono); font-size: 13px; background: #0d1a12; border: 1px solid #23402c;
+    border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; }
+  .output .k { color: var(--accent); }
+  .did { font-size: 13px; }
+  .did .ok { color: var(--good); } .did .no { color: var(--bad); }
+  .cards { font-size: 13px; color: var(--muted); }
+  .cards b { color: var(--text); }
+  pre.txt { font-family: var(--mono); font-size: 12px; background: #0c0e11; border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; margin: 4px 0 0;
+    max-height: 420px; overflow-y: auto; }
+  details { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 6px; }
+  details > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+  details > summary b { color: var(--text); font-weight: 600; }
+  mark { background: var(--mark); color: var(--warn); border-radius: 3px; }
+  mark.secret { background: var(--secret); color: #ff9ecf; }
+  .special { color: #c39bff; } .gen { background: #0d1a12; color: var(--good); }
+  #list { margin-top: 14px; }
+  #list .row { display: flex; gap: 8px; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 12.5px; }
+  #list .row:hover { background: var(--panel2); }
+  #list .row.on { background: #1d2a38; }
+  #list .row .n { color: var(--muted); font-family: var(--mono); width: 34px; flex: none; }
+  #list .row .s { width: 150px; flex: none; font-weight: 600; }
+  #list .row .t { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 70vh auto; height: auto; }
+    #frame { border-right: 0; border-bottom: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Parley replay · 5 × Qwen3.5-4B</h1>
+  <button id="prev" title="Left arrow">◀ previous call</button>
+  <button id="next" title="Right arrow">next call ▶</button>
+  <label class="hint">auto-advance
+    <select id="auto">
+      <option value="0">off</option>
+      <option value="4">every 4 s</option>
+      <option value="8">every 8 s</option>
+      <option value="15">every 15 s</option>
+    </select></label>
+  <span id="pos">loading…</span>
+  <span class="hint">← → keys step one model call. The ‹ › buttons under the table step one game event.</span>
+</header>
+<main>
+  <iframe id="frame" src="/replay-frame"></iframe>
+  <section id="side"><div class="hint">Loading the replay…</div></section>
+</main>
+<script>
+const palette = ["#7cc4ff", "#ffb86b", "#7bd88f", "#ff8fb1", "#c39bff"];
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const fmt = n => Number(n || 0).toLocaleString();
+let data, names = [], policies = [], events = [], decisions = [], position = 0, shown = -2, timer = null;
+const openState = new Map();
+
+const frameDoc = () => document.getElementById("frame").contentDocument;
+// The table view labels seats by policy name; the prompts use the cog name.
+const name = seat => policies[seat] ? `${policies[seat]} (${names[seat]})` : (names[seat] ?? `seat ${seat}`);
+const colored = seat => `<span style="color:${palette[seat % palette.length]};font-weight:600">${esc(name(seat))}</span>`;
+
+function describe(e) {
+  if (!e) return "Before the first event.";
+  switch (e.kind) {
+    case "roundStart": return `Round ${e.round + 1} starts. Everyone is back at full health.`;
+    case "deal": return `${colored(e.seat)} is secretly dealt FRIEND ${colored(e.friend)} and ENEMY ${colored(e.enemy)}.`;
+    case "it": return `${colored(e.seat)} now holds the paintgun (is IT).`;
+    case "say": return `${colored(e.seat)} says: “${esc(e.text)}”`;
+    case "shot": return `${colored(e.seat)} shoots ${colored(e.target)}: <b>${e.miss ? "miss" : "hit"}</b>. ${colored(e.target)} has ${e.hpAfter} hp.`;
+    case "skip": return `${colored(e.seat)} passes and keeps the gun.`;
+    case "death": return `${colored(e.seat)} is out for this round.`;
+    case "roundEnd": return `Round ${e.round + 1} ends.`;
+    case "score": return `${colored(e.seat)} scores ${e.points} (${esc(e.text)}${e.target !== undefined ? ", " + colored(e.target) : ""}).`;
+    default: return esc(JSON.stringify(e));
+  }
+}
+
+function prettyOutput(call) {
+  if (call.parsed && typeof call.parsed === "object")
+    return "{\n" + Object.entries(call.parsed).map(([k, v]) => `  <span class="k">"${esc(k)}"</span>: ${esc(JSON.stringify(v))}`).join(",\n") + "\n}";
+  return esc(call.output);
+}
+function highlightUser(text) {
+  return esc(text).split("\n").map(line => {
+    if (/^Your SECRET cards/.test(line)) return `<mark class="secret">${line}</mark>`;
+    if (/^(GUIDANCE FROM YOUR OPERATOR|You are IT\.|You are not IT|You are OUT|Respond with JSON|Optional extra fields|Choose your AIM|You may instead PASS|Round \d)/.test(line)) return `<mark>${line}</mark>`;
+    return line;
+  }).join("\n");
+}
+function section(key, title, inner, open) {
+  const isOpen = openState.has(key) ? openState.get(key) : open;
+  return `<details data-key="${key}" ${isOpen ? "open" : ""}><summary>${title}</summary>${inner}</details>`;
+}
+
+function currentDecision() {
+  let k = -1;
+  for (let j = 0; j < decisions.length; j++) if (decisions[j].eventBefore < position) k = j;
+  return k;
+}
+
+function render() {
+  const k = currentDecision();
+  const side = document.getElementById("side");
+  const event = events[position - 1];
+  const fromModel = k >= 0 && position <= decisions[k].eventAfter;
+  let html = `<div class="now"><div class="label">At the table now · event ${position} of ${events.length}</div>${describe(event)}
+    ${event && !fromModel ? `<div class="hint" style="margin-top:4px">A game rule produced this event, not a model call.</div>` : ""}</div>`;
+  if (k < 0) {
+    html += `<div class="hint">No model call yet. Press → (or "next call") to jump to the first one.</div>`;
+  } else {
+    const d = decisions[k], call = data.calls[d.n];
+    if (!call) { side.innerHTML = html + `<div class="hint">No recorded model call matches decision ${d.id}.</div>`; return; }
+    const req = call.game_request, user = req.messages[0].content;
+    html += `<div class="card"><div class="head">
+      <span class="seat" style="color:${palette[d.seat % palette.length]}">${esc(name(d.seat))}</span>
+      <span class="kind">${esc(call.kind)}</span>
+      <span class="meta">call ${k + 1} of ${decisions.length} · ${(call.latency_ms / 1000).toFixed(1)} s · ${fmt(call.input_tokens)} in → ${fmt(call.output_tokens)} out</span></div>
+      <div class="body">
+      ${!fromModel ? `<div class="hint" style="margin-top:6px">This is the most recent model call; the events after it came from the game.</div>` : ""}
+      <div class="label">Output: what Qwen wrote</div><div class="output">${prettyOutput(call)}</div>
+      <div class="label">What the game did with it</div>
+      <div class="did">${d.accepted ? '<span class="ok">accepted</span>' : '<span class="no">rejected</span>'}: events ${d.eventBefore + 1}–${d.eventAfter} on the table.</div>
+      ${call.friend ? `<div class="label">Secret cards in this prompt</div><div class="cards">FRIEND <b>${esc(call.friend)}</b> · ENEMY <b>${esc(call.enemy)}</b></div>` : ""}
+      <div class="label">Input: user message (${fmt(user.length)} characters; scrolled to the end, scroll up for the full history)</div>
+      <pre class="txt" id="usermsg">${highlightUser(user)}</pre>
+      ${section("system", "<b>Input: system message</b> (rules, same every call except the name)", `<pre class="txt">${esc(req.system)}</pre>`, false)}
+      ${section("template", `<b>Exact text Qwen reads</b> (${fmt(call.template_tokens)} tokens after the chat template)`,
+        call.template_text ? `<div class="hint">Purple: special tokens from the chat template. Green: what Qwen generated.</div><pre class="txt">${esc(call.template_text).replace(/(&lt;\|[a-z_]+\|&gt;|&lt;\/?think&gt;)/g, '<span class="special">$1</span>')}<span class="gen">${esc(call.output)}</span></pre>` : `<div class="hint">Not recorded.</div>`, false)}
+      ${section("raw", "<b>Raw requests and replies</b>", `<pre class="txt">${esc(JSON.stringify({game_to_recorder: req, recorder_to_gpu: call.gpu_request, gpu_reply: call.gpu_response, recorder_to_game: call.reply_to_game}, null, 1))}</pre>`, false)}
+      </div></div>`;
+  }
+  html += `<details id="list" data-key="list" ${openState.get("list") ? "open" : ""}><summary><b>All ${decisions.length} model calls</b> (click one to jump)</summary>` +
+    decisions.map((d, j) => `<div class="row ${j === k ? "on" : ""}" data-j="${j}"><span class="n">${j + 1}</span><span class="s" style="color:${palette[d.seat % palette.length]}">${esc(name(d.seat))}</span><span class="t">${esc(d.phase)}: ${esc((d.action && d.action.say) || "")}</span></div>`).join("") + `</details>`;
+  side.innerHTML = html;
+  const pre = document.getElementById("usermsg");
+  if (pre) pre.scrollTop = pre.scrollHeight;
+  side.querySelectorAll("details > summary").forEach(s => s.addEventListener("click", () => {
+    openState.set(s.parentElement.dataset.key, !s.parentElement.open);
+  }));
+  side.querySelectorAll("#list .row").forEach(r => r.onclick = () => seek(decisions[+r.dataset.j].eventAfter));
+  document.getElementById("pos").textContent = `model call ${k + 1} / ${decisions.length} · event ${position} / ${events.length}`;
+  document.getElementById("prev").disabled = k < 0;
+  document.getElementById("next").disabled = k >= decisions.length - 1;
+  shown = k;
+}
+
+function readPosition() {
+  const m = /Event (\d+)/.exec(frameDoc().getElementById("pos").textContent);
+  return m ? +m[1] : 0;
+}
+function seek(target) {
+  const doc = frameDoc();
+  const next = doc.getElementById("next"), prev = doc.getElementById("previous");
+  let guard = 0;
+  while (readPosition() < target && !next.disabled && guard++ < 2000) next.click();
+  while (readPosition() > target && !prev.disabled && guard++ < 2000) prev.click();
+}
+function step(direction) {
+  const k = currentDecision();
+  const atEnd = k >= 0 && position >= decisions[k].eventAfter;
+  let j = direction > 0 ? (atEnd || k < 0 ? k + 1 : k) : k - 1;
+  if (j < 0) return seek(0);
+  if (j >= decisions.length) return;
+  seek(decisions[j].eventAfter);
+}
+
+document.getElementById("next").onclick = () => step(1);
+document.getElementById("prev").onclick = () => step(-1);
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+  if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+});
+document.getElementById("auto").onchange = e => {
+  clearInterval(timer);
+  const seconds = +e.target.value;
+  if (seconds) timer = setInterval(() => step(1), seconds * 1000);
+};
+
+function hookFrame() {
+  const doc = frameDoc();
+  if (!doc || doc.documentElement.getAttribute("data-replay-loaded") !== "true") return setTimeout(hookFrame, 150);
+  // Parley's replay starts playing by itself; pause it so the page moves only when you step.
+  const play = doc.getElementById("play");
+  if (play.textContent.trim() === "Pause") play.click();
+  const label = doc.getElementById("pos");
+  let pending = false;
+  new MutationObserver(() => {
+    position = readPosition();
+    if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; render(); }); }
+  })
+    .observe(label, {childList: true, characterData: true, subtree: true});
+  // Arrow keys inside the table view also step model calls.
+  doc.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault(); e.stopPropagation(); step(e.key === "ArrowRight" ? 1 : -1);
+    }
+  }, true);
+  position = readPosition();
+  render();
+}
+
+fetch("/api/replay").then(r => r.json()).then(d => {
+  data = d;
+  names = d.payload.names;
+  policies = d.payload.policyNames || [];
+  events = d.payload.events;
+  decisions = d.decisions.slice().sort((a, b) => a.eventBefore - b.eventBefore);
+  hookFrame();
+});
+</script>
+</body>
+</html>

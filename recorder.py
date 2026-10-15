@@ -82,6 +82,18 @@ class Recorder:
             "gpu_started": None,
             "game": None,
         }
+        self.replay = None
+        # After a restart, show the calls and status already recorded for this run.
+        saved = self.run_dir / "calls.jsonl"
+        if saved.exists():
+            latest = {}
+            for line in saved.read_text().splitlines():
+                call = json.loads(line)
+                latest[call["n"]] = call
+            self.calls = [latest[n] for n in sorted(latest)]
+        if (self.run_dir / "meta.json").exists():
+            self.meta.update(json.loads((self.run_dir / "meta.json").read_text()))
+            self.meta["parley_port"] = parley_port
 
     def publish(self, kind, payload):
         data = json.dumps({"type": kind, kind: payload})
@@ -227,6 +239,50 @@ class Recorder:
     async def page(self, _request):
         return web.FileResponse(HERE / "viewer.html")
 
+    async def replay_page(self, _request):
+        return web.FileResponse(HERE / "replay.html")
+
+    async def replay_frame(self, _request):
+        return web.FileResponse(HERE / "replay_frame.html")
+
+    async def parley_client(self, request):
+        """Parley's own renderer and stylesheet, from the pinned checkout."""
+        name = request.match_info["name"]
+        if name not in ("renderer.js", "chrome.css"):
+            raise web.HTTPNotFound()
+        return web.FileResponse(HERE / "upstream" / "client" / name)
+
+    async def parley_asset(self, request):
+        name = request.match_info["name"]
+        if "/" in name or name.startswith("."):
+            raise web.HTTPNotFound()
+        return web.FileResponse(HERE / "upstream" / "data" / name)
+
+    async def replay_data(self, _request):
+        """Replay payload plus, for every decision, the model call behind it.
+
+        The payload comes from the Parley server in replay mode, which adds the
+        table state after each event. Decisions are joined to recorded calls
+        by the exact user message the game sent."""
+        if self.replay is None:
+            async with self.session.ws_connect(
+                    f"ws://127.0.0.1:{self.meta['parley_port']}/replay", max_msg_size=0) as ws:
+                payload = json.loads((await ws.receive()).data)
+            refs = json.loads((self.run_dir / "replay.json").read_text())["decisionRefs"]
+            prompts = {}
+            for line in (self.run_dir / "trajectory.jsonl").read_text().splitlines():
+                record = json.loads(line)
+                if record.get("event_type") != "decision":
+                    continue
+                for attempt in record["attempts"]:
+                    if attempt["attempt_id"] == record["selected_attempt_id"]:
+                        prompts[str(record["decision_id"])] = attempt["request"]["messages"][0]["content"]
+            by_user = {call["game_request"]["messages"][0]["content"]: call["n"] for call in self.calls}
+            decisions = [{**ref, "n": by_user.get(prompts.get(str(ref["id"])))} for ref in refs]
+            self.replay = {"payload": payload, "decisions": decisions,
+                           "calls": {call["n"]: call for call in self.calls}}
+        return web.json_response(self.replay)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -245,6 +301,11 @@ def main():
     app.router.add_get("/events", recorder.events)
     app.router.add_post("/v1/messages", recorder.messages)
     app.router.add_post("/api/status", recorder.status)
+    app.router.add_get("/replay", recorder.replay_page)
+    app.router.add_get("/replay-frame", recorder.replay_frame)
+    app.router.add_get("/parley/client/assets/{name}", recorder.parley_asset)
+    app.router.add_get("/parley/client/{name}", recorder.parley_client)
+    app.router.add_get("/api/replay", recorder.replay_data)
     web.run_app(app, host="0.0.0.0", port=args.port)
 
 
