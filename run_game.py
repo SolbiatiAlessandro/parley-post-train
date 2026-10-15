@@ -88,7 +88,9 @@ def wait_for_server(port, seconds=60):
 
 async def play_seat(port, slot, token, finals):
     url = f"ws://127.0.0.1:{port}/player?slot={slot}&token={token}"
-    async with websockets.connect(url, max_size=None) as ws:
+    # No client pings: a seat only listens, and a missed pong would count as a
+    # disconnect, which ends the whole game.
+    async with websockets.connect(url, max_size=None, ping_interval=None) as ws:
         registered = False
         async for raw in ws:
             message = json.loads(raw)
@@ -110,6 +112,8 @@ async def main():
     parser.add_argument("--recorder-port", type=int, default=8790)
     parser.add_argument("--parley-port", type=int, default=8890)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--thinking", action="store_true",
+                        help="thinking mode: Qwen's temperature 1.0 and longer deadlines")
     args = parser.parse_args()
     run_dir = Path(args.run_dir).resolve()
     run_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -118,13 +122,15 @@ async def main():
     config = {
         "seed": seed,
         "tokens": [secrets.token_hex(12) for _ in range(5)],
-        "players": [{"name": f"qwen3.5-4b-{i + 1}"} for i in range(5)],
+        "players": [{"name": f"qwen3.5-4b{'-think' if args.thinking else ''}-{i + 1}"} for i in range(5)],
         "model": "qwen/qwen3.5-4b",
         # Pacing for a watched local game (not the hosted defaults): slower
-        # turns, a longer model deadline and episode budget.
+        # turns, a longer model deadline and episode budget. Parley deals a
+        # new round only while the longest round so far fits in 60% of the
+        # episode budget, so a slow thinking game needs a large budget.
         "turnDelayMs": 2500,
-        "llmTimeoutSeconds": 90,
-        "episodeTimeoutSeconds": 2400,
+        "llmTimeoutSeconds": 300 if args.thinking else 90,
+        "episodeTimeoutSeconds": 10800 if args.thinking else 2400,
     }
     config_path = run_dir / "config.json"
     config_path.write_text(json.dumps(config, indent=1))
@@ -145,7 +151,7 @@ async def main():
             "-e", "COGAME_SAVE_TRAJECTORY_URI=file:///run/parley/trajectory.jsonl",
             "-e", f"COWORLD_LLM_ENDPOINT=http://host.docker.internal:{args.recorder_port}",
             "-e", "COWORLD_LLM_MODEL=qwen/qwen3.5-4b",
-            "-e", "COWORLD_LLM_TEMPERATURE=0.7",
+            "-e", "COWORLD_LLM_TEMPERATURE=" + ("1.0" if args.thinking else "0.7"),
             "-e", "LLM_REQUEST_METADATA=" + json.dumps({"episode_request_id": "local-" + run_dir.name}),
             IMAGE,
         ], check=True)
@@ -162,9 +168,21 @@ async def main():
             logger.wait(timeout=10)
         results = run_dir / "results.json"
         summary = json.loads(results.read_text()) if results.exists() else None
+        replay = False
+        if (run_dir / "replay.json").exists():
+            # Serve the finished game's replay on the same port so /replay works.
+            subprocess.run([
+                "docker", "run", "-d", "--rm", "--name", "parley-replay-" + run_dir.name,
+                "-p", f"0.0.0.0:{args.parley_port}:{args.parley_port}",
+                "-v", f"{run_dir}:/run/parley",
+                "-e", "COGAME_HOST=0.0.0.0", "-e", f"COGAME_PORT={args.parley_port}",
+                "-e", "COGAME_LOAD_REPLAY_URI=file:///run/parley/replay.json",
+                IMAGE,
+            ], check=True)
+            replay = True
         await status(session, args.recorder,
                      status=f"game over (exit {code})" + ("" if summary else " — no results: see game.log"),
-                     game={"running": True, "seed": seed, "exit": code, "results": summary},
+                     game={"running": True, "seed": seed, "exit": code, "results": summary, "replay": replay},
                      gpu_stopped=time.time() + 600)
 
 

@@ -77,7 +77,7 @@
 </head>
 <body>
 <header>
-  <h1>Parley · 5 × Qwen3.5-4B</h1>
+  <h1 id="title">Parley · 5 × Qwen3.5-4B</h1>
   <span id="status">connecting…</span>
   <span class="stat">model calls <b id="s-calls">0</b></span>
   <span class="stat">tokens in/out <b id="s-tokens">0 / 0</b></span>
@@ -132,9 +132,11 @@ function highlightUser(text) {
   }).join("\n");
 }
 
-function highlightTemplate(text, output) {
+function highlightTemplate(text, call) {
   const t = esc(text).replace(/(&lt;\|[a-z_]+\|&gt;|&lt;\/?think&gt;)/g, '<span class="special">$1</span>');
-  return t + `<span class="gen">${esc(output)}</span>`;
+  // With thinking on, the model writes its thinking between think tags before the answer.
+  const generated = call.reasoning ? `<think>\n${call.reasoning}\n</think>\n\n${call.output || ""}` : (call.output || "");
+  return t + `<span class="gen">${esc(generated)}</span>`;
 }
 
 function section(id, call, title, inner) {
@@ -167,6 +169,7 @@ function renderCard(call) {
     body += `<div class="label">Output — what Qwen wrote${call.finish_reason === "length" ? " (cut off at the token limit)" : ""}</div>
       <div class="output">${prettyOutput(call)}</div>`;
     if (call.parsed === null) body += `<div class="err">Not valid JSON: the game will reject this reply.</div>`;
+    if (call.thinking_cut) body += `<div class="hint" style="color:var(--warn)">Thinking ran past its ${fmt(meta.thinking_budget)}-token budget. The recorder closed the thinking with Qwen's standard "limited time" sentence and the model wrote the answer from there.</div>`;
     if (call.reasoning) body += section("reasoning", call, "<b>Thinking</b> (hidden from the game)", `<pre class="txt">${esc(call.reasoning)}</pre>`);
   } else if (call.status === "error") {
     body += `<div class="err">${esc(call.error)}</div>`;
@@ -177,7 +180,7 @@ function renderCard(call) {
   body += section("user", call, `<b>Input: user message</b> (${fmt(user.length)} characters; changes every call)`, `<pre class="txt">${highlightUser(user)}</pre>`);
   body += section("system", call, `<b>Input: system message</b> (rules)`, `<pre class="txt">${esc(req.system)}</pre>`);
   body += section("template", call, `<b>Exact text Qwen reads</b>${call.template_tokens ? ` (${fmt(call.template_tokens)} tokens, after Qwen's chat template)` : ""}`,
-    call.template_text ? `<div class="hint">Purple: special tokens added by the chat template. Green: the tokens Qwen generated.</div><pre class="txt">${highlightTemplate(call.template_text, call.output || "")}</pre>`
+    call.template_text ? `<div class="hint">Purple: special tokens added by the chat template. Green: the tokens Qwen generated.</div><pre class="txt">${highlightTemplate(call.template_text, call)}</pre>`
       : `<div class="hint">${call.template_error ? esc(call.template_error) : "Loading…"}</div>`);
   body += section("raw", call, "<b>Raw requests and replies</b> (game → recorder → GPU → game)",
     `<div class="label">Game → recorder (Anthropic Messages format)</div><pre class="txt">${esc(JSON.stringify(req, null, 1))}</pre>
@@ -214,7 +217,20 @@ function renderMeta() {
   document.getElementById("status").textContent = meta.status || "";
   const s = meta.sampling || {};
   document.getElementById("settings").textContent =
-    `${meta.model} on one ${meta.gpu} · thinking ${meta.thinking ? "on" : "off"} · ${meta.decoding} · top_p ${s.top_p} top_k ${s.top_k} presence_penalty ${s.presence_penalty} · temperature and max_tokens set by the game`;
+    `${meta.model} on one ${meta.gpu} · thinking ${meta.thinking ? `on (up to ${meta.thinking_budget} tokens)` : "off"} · ${meta.decoding} · top_p ${s.top_p} top_k ${s.top_k} presence_penalty ${s.presence_penalty} · temperature and answer length set by the game`;
+  document.getElementById("title").textContent = `Parley · 5 × ${(meta.model || "").replace("Qwen/", "")}${meta.thinking ? " · thinking on" : ""}`;
+  if (meta.game && meta.game.exit !== undefined) {
+    const left = document.getElementById("left");
+    if (!left.querySelector(".over")) {
+      const box = document.createElement("div");
+      box.className = "placeholder over";
+      const r = meta.game.results;
+      box.innerHTML = `<div><p><b>Game over.</b> ${r ? "Winner: " + esc(r.names[r.win.indexOf(true)]) + "." : "No results were written; see game.log."}</p>
+        ${meta.game.replay ? `<p><a href="/replay" style="color:var(--accent)">Open the step-through replay →</a></p>` : ""}</div>`;
+      left.innerHTML = ""; left.appendChild(box);
+    }
+    return;
+  }
   if (meta.game && meta.game.running && !document.querySelector("#left iframe")) {
     const frame = document.createElement("iframe");
     frame.src = `http://${location.hostname}:${meta.parley_port}/client/global`;

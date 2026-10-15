@@ -66,18 +66,19 @@
 </head>
 <body>
 <header>
-  <h1>Parley replay · 5 × Qwen3.5-4B</h1>
+  <h1 id="title">Parley replay</h1>
   <button id="prev" title="Left arrow">◀ previous call</button>
   <button id="next" title="Right arrow">next call ▶</button>
-  <label class="hint">auto-advance
+  <button id="play">▶ Play</button>
+  <label class="hint">one call every
     <select id="auto">
-      <option value="0">off</option>
-      <option value="4">every 4 s</option>
-      <option value="8">every 8 s</option>
-      <option value="15">every 15 s</option>
+      <option value="4">4 s</option>
+      <option value="6" selected>6 s</option>
+      <option value="10">10 s</option>
+      <option value="20">20 s</option>
     </select></label>
   <span id="pos">loading…</span>
-  <span class="hint">← → keys step one model call. The ‹ › buttons under the table step one game event.</span>
+  <span class="hint">Space = play/pause. ← → = one model call. The ‹ › buttons under the table step one game event.</span>
 </header>
 <main>
   <iframe id="frame" src="/replay-frame"></iframe>
@@ -154,6 +155,8 @@ function render() {
       <div class="body">
       ${!fromModel ? `<div class="hint" style="margin-top:6px">This is the most recent model call; the events after it came from the game.</div>` : ""}
       <div class="label">Output: what Qwen wrote</div><div class="output">${prettyOutput(call)}</div>
+      ${call.thinking_cut ? `<div class="hint" style="color:var(--warn);margin-top:4px">Thinking ran past its token budget; the recorder closed it with Qwen's standard "limited time" sentence and the model then wrote the answer.</div>` : ""}
+      ${call.reasoning ? section("reasoning", `<b>Thinking</b> (${fmt(call.reasoning.length)} characters; the game never sees this)`, `<pre class="txt">${esc(call.reasoning)}</pre>`, true) : ""}
       <div class="label">What the game did with it</div>
       <div class="did">${d.accepted ? '<span class="ok">accepted</span>' : '<span class="no">rejected</span>'}: events ${d.eventBefore + 1}–${d.eventAfter} on the table.</div>
       ${call.friend ? `<div class="label">Secret cards in this prompt</div><div class="cards">FRIEND <b>${esc(call.friend)}</b> · ENEMY <b>${esc(call.enemy)}</b></div>` : ""}
@@ -161,7 +164,7 @@ function render() {
       <pre class="txt" id="usermsg">${highlightUser(user)}</pre>
       ${section("system", "<b>Input: system message</b> (rules, same every call except the name)", `<pre class="txt">${esc(req.system)}</pre>`, false)}
       ${section("template", `<b>Exact text Qwen reads</b> (${fmt(call.template_tokens)} tokens after the chat template)`,
-        call.template_text ? `<div class="hint">Purple: special tokens from the chat template. Green: what Qwen generated.</div><pre class="txt">${esc(call.template_text).replace(/(&lt;\|[a-z_]+\|&gt;|&lt;\/?think&gt;)/g, '<span class="special">$1</span>')}<span class="gen">${esc(call.output)}</span></pre>` : `<div class="hint">Not recorded.</div>`, false)}
+        call.template_text ? `<div class="hint">Purple: special tokens from the chat template. Green: what Qwen generated.</div><pre class="txt">${esc(call.template_text).replace(/(&lt;\|[a-z_]+\|&gt;|&lt;\/?think&gt;)/g, '<span class="special">$1</span>')}<span class="gen">${esc(call.reasoning ? `<think>\n${call.reasoning}\n</think>\n\n${call.output}` : call.output)}</span></pre>` : `<div class="hint">Not recorded.</div>`, false)}
       ${section("raw", "<b>Raw requests and replies</b>", `<pre class="txt">${esc(JSON.stringify({game_to_recorder: req, recorder_to_gpu: call.gpu_request, gpu_reply: call.gpu_response, recorder_to_game: call.reply_to_game}, null, 1))}</pre>`, false)}
       </div></div>`;
   }
@@ -206,11 +209,19 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
   if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
 });
-document.getElementById("auto").onchange = e => {
+let playing = false;
+function setPlaying(on) {
+  playing = on;
   clearInterval(timer);
-  const seconds = +e.target.value;
-  if (seconds) timer = setInterval(() => step(1), seconds * 1000);
-};
+  document.getElementById("play").textContent = on ? "⏸ Pause" : "▶ Play";
+  if (on) timer = setInterval(() => {
+    if (currentDecision() >= decisions.length - 1) return setPlaying(false);
+    step(1);
+  }, +document.getElementById("auto").value * 1000);
+}
+document.getElementById("play").onclick = () => setPlaying(!playing);
+document.getElementById("auto").onchange = () => { if (playing) setPlaying(true); };
+document.addEventListener("keydown", e => { if (e.key === " ") { e.preventDefault(); setPlaying(!playing); } });
 
 function hookFrame() {
   const doc = frameDoc();
@@ -237,6 +248,7 @@ function hookFrame() {
 
 fetch("/api/replay").then(r => r.json()).then(d => {
   data = d;
+  if (d.meta) document.getElementById("title").textContent = `Parley replay · 5 × ${(d.meta.model || "").replace("Qwen/", "")}${d.meta.thinking ? " · thinking on" : ""}`;
   names = d.payload.names;
   policies = d.payload.policyNames || [];
   events = d.payload.events;

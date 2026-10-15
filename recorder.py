@@ -27,10 +27,12 @@ SERVED_NAME = "qwen3.5-4b"
 HF_ID = "Qwen/Qwen3.5-4B"
 GPU = "L40S"
 GPU_DOLLARS_PER_HOUR = 0.000542 * 3600  # modal.com/pricing, 2026-10-14
-THINKING = False
-# Qwen's recommended non-thinking settings from the model card.
-# Temperature and max_tokens come from the game's own request.
-SAMPLING = {"top_p": 0.8, "top_k": 20, "min_p": 0.0, "presence_penalty": 1.5}
+# Qwen's recommended settings from the model card, per mode. The game sets
+# the temperature (COWORLD_LLM_TEMPERATURE) and the answer's token cap.
+SAMPLING = {
+    False: {"top_p": 0.8, "top_k": 20, "min_p": 0.0, "presence_penalty": 1.5},
+    True: {"top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 1.5},
+}
 # Only the game container (via Docker's host gateway) and this machine may
 # spend GPU time through /v1/messages; the page itself is open on the LAN.
 TRUSTED = [ipaddress.ip_network(n) for n in
@@ -63,10 +65,15 @@ def describe(system, user):
 
 
 class Recorder:
-    def __init__(self, modal_url, key, run_dir, parley_port):
+    def __init__(self, modal_url, key, run_dir, parley_port, thinking, thinking_budget):
         self.base = modal_url.rstrip("/")
         self.auth = {"Authorization": f"Bearer {key}"}
         self.run_dir = Path(run_dir)
+        self.thinking = thinking
+        # Extra output tokens for the thinking text, on top of the game's cap
+        # for the JSON answer. If the thinking runs past it, the answer is
+        # empty and the game rejects the reply.
+        self.thinking_budget = thinking_budget if thinking else 0
         self.calls = []
         self.queues = set()
         self.session = None
@@ -74,8 +81,9 @@ class Recorder:
             "model": HF_ID,
             "gpu": GPU,
             "gpu_dollars_per_hour": GPU_DOLLARS_PER_HOUR,
-            "thinking": THINKING,
-            "sampling": SAMPLING,
+            "thinking": thinking,
+            "thinking_budget": self.thinking_budget,
+            "sampling": SAMPLING[thinking],
             "decoding": "JSON-only (vLLM response_format json_object)",
             "parley_port": parley_port,
             "status": "recorder started",
@@ -105,7 +113,9 @@ class Recorder:
             stream.write(json.dumps(call) + "\n")
 
     async def start(self, _app):
-        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=180))
+        # Modal answers a request that runs past 150 s with a redirect that
+        # aiohttp follows, so long thinking replies still arrive.
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=900))
 
     async def stop(self, _app):
         await self.session.close()
@@ -120,10 +130,10 @@ class Recorder:
             "model": SERVED_NAME,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
-            "max_tokens": body["max_tokens"],
+            "max_tokens": body["max_tokens"] + self.thinking_budget,
             "temperature": body["temperature"],
-            **SAMPLING,
-            "chat_template_kwargs": {"enable_thinking": THINKING},
+            **SAMPLING[self.thinking],
+            "chat_template_kwargs": {"enable_thinking": self.thinking},
             "response_format": {"type": "json_object"},
         }
         call = {
@@ -157,6 +167,44 @@ class Recorder:
         message = choice["message"]
         output = message.get("content") or ""
         usage = gpu_response["usage"]
+        reasoning = message.get("reasoning_content") or message.get("reasoning")
+        if self.thinking and choice.get("finish_reason") == "length" and not output.strip():
+            # The thinking ran past its budget. Qwen's documented thinking-budget
+            # method: close the thinking with a fixed sentence and let the model
+            # write the answer from what it has so far. The game sees one reply.
+            call["thinking_cut"] = True
+            closed = ("<think>\n" + (reasoning or "") + "\n\nConsidering the limited time by the user, "
+                      "I have to give the solution based on the thinking directly now.\n</think>\n\n")
+            continuation = {
+                **gpu_request,
+                "messages": gpu_request["messages"] + [{"role": "assistant", "content": closed}],
+                "max_tokens": body["max_tokens"],
+                "add_generation_prompt": False,
+                "continue_final_message": True,
+            }
+            call["continuation_request"] = continuation
+            try:
+                async with self.session.post(self.base + "/v1/chat/completions",
+                                             json=continuation, headers=self.auth) as response:
+                    text = await response.text()
+                    if response.status != 200:
+                        raise RuntimeError(f"GPU server returned {response.status}: {text[:400]}")
+                    second = json.loads(text)
+            except Exception as error:
+                call.update(status="error", error=str(error),
+                            latency_ms=round((time.monotonic() - began) * 1000))
+                self.publish("call", call)
+                self.save(call)
+                return web.json_response(
+                    {"type": "error", "error": {"type": "api_error", "message": str(error)}},
+                    status=502)
+            call["continuation_response"] = second
+            choice = second["choices"][0]
+            message = choice["message"]
+            # The reasoning parser may file the forced answer under either field.
+            output = message.get("content") or message.get("reasoning_content") or message.get("reasoning") or ""
+            usage = {"prompt_tokens": usage["prompt_tokens"],
+                     "completion_tokens": usage["completion_tokens"] + second["usage"]["completion_tokens"]}
         reply = {
             "id": "msg_" + uuid.uuid4().hex,
             "type": "message",
@@ -177,7 +225,7 @@ class Recorder:
             latency_ms=round((time.monotonic() - began) * 1000),
             output=output,
             parsed=parsed,
-            reasoning=message.get("reasoning_content") or message.get("reasoning"),
+            reasoning=reasoning,
             finish_reason=choice.get("finish_reason"),
             input_tokens=usage["prompt_tokens"],
             output_tokens=usage["completion_tokens"],
@@ -280,7 +328,7 @@ class Recorder:
             by_user = {call["game_request"]["messages"][0]["content"]: call["n"] for call in self.calls}
             decisions = [{**ref, "n": by_user.get(prompts.get(str(ref["id"])))} for ref in refs]
             self.replay = {"payload": payload, "decisions": decisions,
-                           "calls": {call["n"]: call for call in self.calls}}
+                           "calls": {call["n"]: call for call in self.calls}, "meta": self.meta}
         return web.json_response(self.replay)
 
 
@@ -290,10 +338,13 @@ def main():
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--port", type=int, default=8790)
     parser.add_argument("--parley-port", type=int, default=8890)
+    parser.add_argument("--thinking", action="store_true", help="let the model think before the JSON")
+    parser.add_argument("--thinking-budget", type=int, default=3000)
     args = parser.parse_args()
     key = dotenv_values(HERE / ".env")["VLLM_API_KEY"]
     Path(args.run_dir).mkdir(mode=0o700, parents=True, exist_ok=True)
-    recorder = Recorder(args.modal_url, key, args.run_dir, args.parley_port)
+    recorder = Recorder(args.modal_url, key, args.run_dir, args.parley_port,
+                        args.thinking, args.thinking_budget)
     app = web.Application(client_max_size=16 * 1024 * 1024)
     app.on_startup.append(recorder.start)
     app.on_cleanup.append(recorder.stop)
