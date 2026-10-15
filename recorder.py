@@ -266,11 +266,10 @@ class Recorder:
             continuation = {
                 **gpu_request,
                 "messages": gpu_request["messages"] + [{"role": "assistant", "content": closed}],
-                # Room for a long spoken line (the game trims it to 160 characters) and a
-                # mild repetition penalty: a forced answer that loops past the cap is cut
-                # mid-JSON and ends the game.
+                # Room for a long spoken line; the schema bounds strings to 160 characters.
+                # No repetition penalty here: it penalizes repeated JSON braces and quotes,
+                # and the answer then never closes.
                 "max_tokens": max(body["max_tokens"], 600),
-                "repetition_penalty": 1.1,
                 "add_generation_prompt": False,
                 "continue_final_message": True,
             }
