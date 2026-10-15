@@ -1,0 +1,252 @@
+[
+ {
+  "game": "rl-iter3-g00",
+  "slot": 0,
+  "score": 0.0,
+  "reward": -0.08132571428571428,
+  "advantage": -0.6258220206440887,
+  "mean_thinking_tokens": 1813.2571428571428,
+  "cut_fraction": 1.0,
+  "calls": 35
+ },
+ {
+  "game": "rl-iter3-g00",
+  "slot": 1,
+  "score": 0.25,
+  "reward": 0.16857948717948718,
+  "advantage": -0.31344083119377625,
+  "mean_thinking_tokens": 1814.2051282051282,
+  "cut_fraction": 1.0,
+  "calls": 39
+ },
+ {
+  "game": "rl-iter3-g00",
+  "slot": 2,
+  "score": 0.75,
+  "reward": 0.668625,
+  "advantage": 0.3116154347755989,
+  "mean_thinking_tokens": 1813.75,
+  "cut_fraction": 1.0,
+  "calls": 32
+ },
+ {
+  "game": "rl-iter3-g00",
+  "slot": 3,
+  "score": 1.0,
+  "reward": 0.9219219512195121,
+  "advantage": 0.6282363071791167,
+  "mean_thinking_tokens": 1780.780487804878,
+  "cut_fraction": 0.975609756097561,
+  "calls": 41
+ },
+ {
+  "game": "rl-iter3-g00",
+  "slot": 4,
+  "score": 0.5,
+  "reward": 0.4188612903225806,
+  "advantage": -0.0005888901168505244,
+  "mean_thinking_tokens": 1811.3870967741937,
+  "cut_fraction": 1.0,
+  "calls": 31
+ },
+ {
+  "game": "rl-iter3-g02",
+  "slot": 0,
+  "score": 0.0,
+  "reward": -0.08091764705882355,
+  "advantage": -0.6246133429603383,
+  "mean_thinking_tokens": 1809.1764705882354,
+  "cut_fraction": 0.9705882352941176,
+  "calls": 34
+ },
+ {
+  "game": "rl-iter3-g02",
+  "slot": 1,
+  "score": 0.75,
+  "reward": 0.6686548387096773,
+  "advantage": 0.3123513272856176,
+  "mean_thinking_tokens": 1813.4516129032259,
+  "cut_fraction": 1.0,
+  "calls": 31
+ },
+ {
+  "game": "rl-iter3-g02",
+  "slot": 2,
+  "score": 0.25,
+  "reward": 0.16872758620689654,
+  "advantage": -0.3125571134344178,
+  "mean_thinking_tokens": 1812.7241379310344,
+  "cut_fraction": 1.0,
+  "calls": 29
+ },
+ {
+  "game": "rl-iter3-g02",
+  "slot": 3,
+  "score": 0.5,
+  "reward": 0.41873142857142853,
+  "advantage": -5.2622983243189543e-05,
+  "mean_thinking_tokens": 1812.6857142857143,
+  "cut_fraction": 1.0,
+  "calls": 35
+ },
+ {
+  "game": "rl-iter3-g02",
+  "slot": 4,
+  "score": 1.0,
+  "reward": 0.9186714285714286,
+  "advantage": 0.6248717520923819,
+  "mean_thinking_tokens": 1813.2857142857142,
+  "cut_fraction": 1.0,
+  "calls": 28
+ },
+ {
+  "game": "rl-iter3-g03",
+  "slot": 0,
+  "score": 0.25,
+  "reward": 0.16856,
+  "advantage": -0.31257711285879347,
+  "mean_thinking_tokens": 1814.4,
+  "cut_fraction": 1.0,
+  "calls": 50
+ },
+ {
+  "game": "rl-iter3-g03",
+  "slot": 1,
+  "score": 0.0,
+  "reward": -0.08134716981132077,
+  "advantage": -0.6249607627392946,
+  "mean_thinking_tokens": 1813.4716981132076,
+  "cut_fraction": 1.0,
+  "calls": 53
+ },
+ {
+  "game": "rl-iter3-g03",
+  "slot": 2,
+  "score": 0.75,
+  "reward": 0.6686848484848484,
+  "advantage": 0.31257832259183166,
+  "mean_thinking_tokens": 1813.1515151515152,
+  "cut_fraction": 1.0,
+  "calls": 33
+ },
+ {
+  "game": "rl-iter3-g03",
+  "slot": 3,
+  "score": 1.0,
+  "reward": 0.9185489795918367,
+  "advantage": 0.6249081741457154,
+  "mean_thinking_tokens": 1814.5102040816328,
+  "cut_fraction": 1.0,
+  "calls": 49
+ },
+ {
+  "game": "rl-iter3-g03",
+  "slot": 4,
+  "score": 0.5,
+  "reward": 0.4186630434782609,
+  "advantage": 5.137886054094772e-05,
+  "mean_thinking_tokens": 1813.3695652173913,
+  "cut_fraction": 1.0,
+  "calls": 46
+ },
+ {
+  "game": "rl-iter3-g05",
+  "slot": 0,
+  "score": 0.75,
+  "reward": 0.66797,
+  "advantage": 0.31218743991340037,
+  "mean_thinking_tokens": 1820.3,
+  "cut_fraction": 1.0,
+  "calls": 10
+ },
+ {
+  "game": "rl-iter3-g05",
+  "slot": 1,
+  "score": 1.0,
+  "reward": 0.9183142857142857,
+  "advantage": 0.6251174841262134,
+  "mean_thinking_tokens": 1816.857142857143,
+  "cut_fraction": 1.0,
+  "calls": 14
+ },
+ {
+  "game": "rl-iter3-g05",
+  "slot": 2,
+  "score": 0.25,
+  "reward": 0.16836470588235294,
+  "advantage": -0.3123185532276653,
+  "mean_thinking_tokens": 1816.3529411764705,
+  "cut_fraction": 1.0,
+  "calls": 17
+ },
+ {
+  "game": "rl-iter3-g05",
+  "slot": 3,
+  "score": 0.5,
+  "reward": 0.4181,
+  "advantage": -0.0001497477494118641,
+  "mean_thinking_tokens": 1819,
+  "cut_fraction": 1.0,
+  "calls": 11
+ },
+ {
+  "game": "rl-iter3-g05",
+  "slot": 4,
+  "score": 0.0,
+  "reward": -0.08165,
+  "advantage": -0.6248366230625366,
+  "mean_thinking_tokens": 1816.5,
+  "cut_fraction": 1.0,
+  "calls": 14
+ },
+ {
+  "game": "rl-iter3-g06",
+  "slot": 0,
+  "score": 0.875,
+  "reward": 0.7958804347826087,
+  "advantage": 0.47107405267514507,
+  "mean_thinking_tokens": 1791.195652173913,
+  "cut_fraction": 0.9782608695652174,
+  "calls": 46
+ },
+ {
+  "game": "rl-iter3-g06",
+  "slot": 1,
+  "score": 0.875,
+  "reward": 0.7935333333333333,
+  "advantage": 0.4681401787974247,
+  "mean_thinking_tokens": 1814.6666666666667,
+  "cut_fraction": 1.0,
+  "calls": 48
+ },
+ {
+  "game": "rl-iter3-g06",
+  "slot": 2,
+  "score": 0.25,
+  "reward": 0.1685409090909091,
+  "advantage": -0.3130995702658566,
+  "mean_thinking_tokens": 1814.590909090909,
+  "cut_fraction": 1.0,
+  "calls": 44
+ },
+ {
+  "game": "rl-iter3-g06",
+  "slot": 3,
+  "score": 0.5,
+  "reward": 0.4184955555555555,
+  "advantage": -0.0006565746280441931,
+  "mean_thinking_tokens": 1815.0444444444445,
+  "cut_fraction": 1.0,
+  "calls": 45
+ },
+ {
+  "game": "rl-iter3-g06",
+  "slot": 4,
+  "score": 0.0,
+  "reward": -0.08134615384615387,
+  "advantage": -0.625458086578669,
+  "mean_thinking_tokens": 1813.4615384615386,
+  "cut_fraction": 1.0,
+  "calls": 39
+ }
+]

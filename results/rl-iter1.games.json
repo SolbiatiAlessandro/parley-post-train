@@ -1,0 +1,106 @@
+[
+ {
+  "game": "rl-iter1-g00",
+  "exit": 0,
+  "seconds": 1513,
+  "finished": true,
+  "scores": {
+   "qwen3.5-4b-think-rl-iter1-1": 0.625,
+   "qwen3.5-4b-think-rl-iter1-2": 0.25,
+   "qwen3.5-4b-think-rl-iter1-3": 0.625,
+   "qwen3.5-4b-think-rl-iter1-4": 0.0,
+   "qwen3.5-4b-think-rl-iter1-5": 1.0
+  }
+ },
+ {
+  "game": "rl-iter1-g01",
+  "exit": 0,
+  "seconds": 2354,
+  "finished": true,
+  "scores": {
+   "qwen3.5-4b-think-rl-iter1-1": 0.0,
+   "qwen3.5-4b-think-rl-iter1-2": 0.75,
+   "qwen3.5-4b-think-rl-iter1-3": 0.5,
+   "qwen3.5-4b-think-rl-iter1-4": 0.25,
+   "qwen3.5-4b-think-rl-iter1-5": 1.0
+  }
+ },
+ {
+  "game": "rl-iter1-g02",
+  "exit": 0,
+  "seconds": 2336,
+  "finished": true,
+  "scores": {
+   "qwen3.5-4b-think-rl-iter1-1": 0.25,
+   "qwen3.5-4b-think-rl-iter1-2": 0.0,
+   "qwen3.5-4b-think-rl-iter1-3": 1.0,
+   "qwen3.5-4b-think-rl-iter1-4": 0.5,
+   "qwen3.5-4b-think-rl-iter1-5": 0.75
+  }
+ },
+ {
+  "game": "rl-iter1-g03",
+  "exit": 0,
+  "seconds": 2220,
+  "finished": true,
+  "scores": {
+   "qwen3.5-4b-think-rl-iter1-1": 0.375,
+   "qwen3.5-4b-think-rl-iter1-2": 0.0,
+   "qwen3.5-4b-think-rl-iter1-3": 0.75,
+   "qwen3.5-4b-think-rl-iter1-4": 1.0,
+   "qwen3.5-4b-think-rl-iter1-5": 0.375
+  }
+ },
+ {
+  "game": "rl-iter1-g04",
+  "exit": 0,
+  "seconds": 1707,
+  "finished": true,
+  "scores": {
+   "qwen3.5-4b-think-rl-iter1-1": 0.5,
+   "qwen3.5-4b-think-rl-iter1-2": 0.25,
+   "qwen3.5-4b-think-rl-iter1-3": 0.0,
+   "qwen3.5-4b-think-rl-iter1-4": 1.0,
+   "qwen3.5-4b-think-rl-iter1-5": 0.75
+  }
+ },
+ {
+  "game": "rl-iter1-g05",
+  "exit": 0,
+  "seconds": 2265,
+  "finished": true,
+  "scores": {
+   "qwen3.5-4b-think-rl-iter1-1": 0.5,
+   "qwen3.5-4b-think-rl-iter1-2": 0.75,
+   "qwen3.5-4b-think-rl-iter1-3": 1.0,
+   "qwen3.5-4b-think-rl-iter1-4": 0.25,
+   "qwen3.5-4b-think-rl-iter1-5": 0.0
+  }
+ },
+ {
+  "game": "rl-iter1-g06",
+  "exit": 0,
+  "seconds": 2003,
+  "finished": true,
+  "scores": {
+   "qwen3.5-4b-think-rl-iter1-1": 0.375,
+   "qwen3.5-4b-think-rl-iter1-2": 0.0,
+   "qwen3.5-4b-think-rl-iter1-3": 1.0,
+   "qwen3.5-4b-think-rl-iter1-4": 0.75,
+   "qwen3.5-4b-think-rl-iter1-5": 0.375
+  }
+ },
+ {
+  "game": "rl-iter1-g07",
+  "exit": 0,
+  "seconds": 3562,
+  "finished": true,
+  "scores": {
+   "qwen3.5-4b-think-rl-iter1-1": 0.5,
+   "qwen3.5-4b-think-rl-iter1-2": 1.0,
+   "qwen3.5-4b-think-rl-iter1-3": 0.125,
+   "qwen3.5-4b-think-rl-iter1-4": 0.75,
+   "qwen3.5-4b-think-rl-iter1-5": 0.125
+  }
+ }
+]
