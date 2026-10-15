@@ -133,7 +133,8 @@ async def main():
         # new round only while the longest round so far fits in 60% of the
         # episode budget, so a slow thinking game needs a large budget.
         "turnDelayMs": 2500,
-        "llmTimeoutSeconds": 300 if args.thinking else 90,
+        # Long enough for the recorder to retry across a GPU server restart (~5 min).
+        "llmTimeoutSeconds": 900 if args.thinking else 300,
         "episodeTimeoutSeconds": 10800 if args.thinking else 2400,
     }
     config_path = run_dir / "config.json"

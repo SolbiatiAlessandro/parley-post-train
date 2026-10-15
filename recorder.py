@@ -111,6 +111,7 @@ class Recorder:
         self.auth = {"Authorization": f"Bearer {key}"}
         self.run_dir = Path(run_dir)
         self.thinking = thinking
+        self.retry_seconds = 600  # covers a Modal container preemption and cold restart
         self.sampling = SAMPLING[thinking]
         self.routes = {}  # seat slot -> served model name (for mixed tables)
         # Extra output tokens for the thinking text, on top of the game's cap
@@ -158,16 +159,35 @@ class Recorder:
     async def start(self, _app):
         # Modal answers a request that runs past 150 s with a redirect that
         # aiohttp follows, so long thinking replies still arrive.
-        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=900))
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=900, sock_read=300))
 
     async def stop(self, _app):
         await self.session.close()
 
     async def complete(self, request, call):
-        """One streamed chat completion. Publishes the thinking as it arrives.
+        """One streamed chat completion, retried across server restarts.
 
+        A transport failure (connection error, 5xx, a stream cut off before
+        [DONE]) means the model never answered, so the same request is sent
+        again until it does or `retry_seconds` run out; the game sees one reply.
         Returns a dict shaped like a non-streamed reply: choices[0].message
         (content, reasoning), finish_reason, usage."""
+        began = time.monotonic()
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                return await self.complete_once(request, call)
+            except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as error:
+                waited = time.monotonic() - began
+                if waited > self.retry_seconds:
+                    raise
+                call["transport_retries"] = attempt
+                call["status"] = f"GPU server unavailable ({type(error).__name__}); retrying, {waited:.0f} s so far"
+                self.publish("call", call)
+                await asyncio.sleep(min(30, 5 * attempt))
+
+    async def complete_once(self, request, call):
         streamed = {**request, "stream": True, "stream_options": {"include_usage": True}}
         reasoning, content, finish, usage = [], [], None, None
         last_publish = 0.0
@@ -184,6 +204,8 @@ class Recorder:
                 if data == "[DONE]":
                     break
                 chunk = json.loads(data)
+                if chunk.get("error"):
+                    raise RuntimeError(f"GPU server error: {str(chunk['error'])[:200]}")
                 if chunk.get("usage"):
                     usage = chunk["usage"]
                 for choice in chunk.get("choices", []):
@@ -201,6 +223,8 @@ class Recorder:
                     call["reasoning_partial"] = "".join(reasoning)
                     call["output_partial"] = "".join(content)
                     self.publish("call", call)
+        if finish is None:
+            raise RuntimeError("stream ended before the server finished the reply")
         return {
             "choices": [{"message": {"content": "".join(content) or None,
                                      "reasoning": "".join(reasoning) or None},
